@@ -2,6 +2,13 @@
 
 Index of project documentation. Start with the [root README](../README.md) for quick start; use this folder for deeper detail.
 
+## Status
+
+| Document | Description |
+|----------|-------------|
+| [status.md](status.md) | **What is done, fixed, and remaining** — upgrade checklist |
+| [CHANGELOG.md](../CHANGELOG.md) | Version-by-version release notes |
+
 ## Guides
 
 | Document | Description |
@@ -28,5 +35,4 @@ New ADRs: copy [adr/template.md](adr/template.md), use the next number, add a ro
 
 ## Related
 
-- [CHANGELOG.md](../CHANGELOG.md) — release notes
 - [testdata/](../testdata/nginx-sites-enabled/) — sample configs for parsing tests

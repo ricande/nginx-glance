@@ -19,7 +19,7 @@ It:
 - Reads nginx configuration from `sites-enabled` (read-only)
 - Checks `nginx.service`
 - Tests HTTP and HTTPS per discovered `server_name`
-- Verifies `listen` ports and `proxy_pass` backends
+- Verifies `listen` ports and `proxy_pass` backends (with site names and process hints where available)
 - Shows light system metrics (CPU load, memory, disk root)
 - Exposes **no secrets** (no certs, `.env`, passwords, or keys)
 
@@ -182,6 +182,7 @@ Read-only, local-first, no sudo. Rationale: [docs/adr/](docs/adr/).
 | Topic | Document |
 |-------|----------|
 | Overview | [docs/README.md](docs/README.md) |
+| **Status / roadmap** | [docs/status.md](docs/status.md) |
 | Architecture | [docs/architecture.md](docs/architecture.md) |
 | Backend / JSON | [docs/backend.md](docs/backend.md) |
 | Config parsing | [docs/parsing.md](docs/parsing.md) |
@@ -191,12 +192,14 @@ Read-only, local-first, no sudo. Rationale: [docs/adr/](docs/adr/).
 
 ---
 
-## Optional future work
+## Status and roadmap
 
-- [ ] Custom health paths per domain
-- [ ] Failure notifications
-- [ ] Log history (cron/systemd timer)
-- [ ] TLS certificate expiry (read-only)
+See **[docs/status.md](docs/status.md)** for:
+
+- What is **implemented** (backend, widget, docs)
+- What was **fixed** (Plasma load errors, layout overlap, timestamps, domain order)
+- What is **remaining** (custom health paths, notifications, cert expiry, etc.)
+- **Upgrade checklist** after `git pull`
 
 ---
 

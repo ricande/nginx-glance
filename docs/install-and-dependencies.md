@@ -81,7 +81,8 @@ Local archive (not in git) can include full tree:
 zip -r nginx-glance.zip README.md CHANGELOG.md docs nginx-glance.sh install.sh .gitignore plasmoid testdata
 ```
 
-## Related ADRs
+## Related
 
+- [status.md](status.md) — upgrade checklist after `git pull`
 - [ADR-0007](adr/0007-portable-install-to-home-bin.md)
 - [ADR-0001](adr/0001-read-only-local-status.md)

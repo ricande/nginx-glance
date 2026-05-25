@@ -229,16 +229,110 @@ parse_proxy_backend() {
   printf '%s:%s\n' "$host" "$port"
 }
 
+known_port_service() {
+  case "$1" in
+    5432|5433) echo "PostgreSQL" ;;
+    3306|3307) echo "MySQL/MariaDB" ;;
+    6379) echo "Redis" ;;
+    27017) echo "MongoDB" ;;
+    1433) echo "MSSQL" ;;
+    1521) echo "Oracle" ;;
+    9200) echo "Elasticsearch" ;;
+    5672) echo "RabbitMQ" ;;
+    *) return 1 ;;
+  esac
+}
+
+listener_process_name() {
+  local port="$1"
+  local line proc
+  line="$(ss -ltnp 2>/dev/null | grep -E "[:.]${port}[[:space:]]" | head -1 || true)"
+  [ -z "$line" ] && return 1
+  if [[ "$line" =~ users:\(\(\"([^\"]+)\" ]]; then
+    proc="${BASH_REMATCH[1]}"
+    # ss output may truncate long command names mid-token (strip trailing " (…")
+    if [[ "$proc" == *" ("* ]] && [[ "$proc" != *")"* ]]; then
+      proc="${proc%% (*}"
+    fi
+    proc="$(echo "$proc" | sed 's/[[:space:]]*$//')"
+    [ -n "$proc" ] && printf '%s\n' "$proc" && return 0
+  fi
+  return 1
+}
+
+backend_service_label() {
+  local port="$1"
+  local label
+  label="$(listener_process_name "$port" 2>/dev/null || true)"
+  [ -n "$label" ] && printf '%s\n' "$label" && return 0
+  known_port_service "$port" || true
+}
+
+merge_name_list() {
+  local existing="$1"
+  local add="$2"
+  local part combined="" seen="|"
+  local -a parts=()
+  [ -n "$existing" ] && IFS=',' read -ra parts <<< "$existing"
+  for part in "${parts[@]}"; do
+    part="$(echo "$part" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    [ -z "$part" ] && continue
+    [[ "$seen" == *"|${part}|"* ]] && continue
+    seen="${seen}${part}|"
+    combined="${combined:+$combined, }$part"
+  done
+  IFS=',' read -ra parts <<< "$add"
+  for part in "${parts[@]}"; do
+    part="$(echo "$part" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    [ -z "$part" ] && continue
+    [[ "$seen" == *"|${part}|"* ]] && continue
+    seen="${seen}${part}|"
+    combined="${combined:+$combined, }$part"
+  done
+  printf '%s\n' "$combined"
+}
+
+# Prints: target<TAB>names (comma-separated server_name from same server block)
 discover_proxy_backends() {
-  local f line backend
+  local f line backend part block_label merged
+  declare -A backend_names=()
   while IFS= read -r f; do
     [ -n "$f" ] || continue
+    local -a block_names=()
     while IFS= read -r line; do
+      if [[ "$line" =~ ^[[:space:]]*server[[:space:]]*\{ ]]; then
+        block_names=()
+        continue
+      fi
+      if [[ "$line" =~ ^[[:space:]]*server_name[[:space:]]+ ]]; then
+        block_names=()
+        line="${line#*server_name}"
+        line="${line%;*}"
+        line="$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+        for part in $line; do
+          is_valid_server_name "$part" && block_names+=("$part")
+        done
+        continue
+      fi
       [[ "$line" =~ ^[[:space:]]*proxy_pass[[:space:]] ]] || continue
       backend="$(parse_proxy_backend "$line" || true)"
-      [ -n "${backend:-}" ] && printf '%s\n' "$backend"
+      [ -z "${backend:-}" ] && continue
+      if [ "${#block_names[@]}" -gt 0 ]; then
+        block_label="$(IFS=','; echo "${block_names[*]}")"
+      else
+        block_label=""
+      fi
+      if [ -n "${backend_names[$backend]:-}" ]; then
+        backend_names[$backend]="$(merge_name_list "${backend_names[$backend]}" "$block_label")"
+      else
+        backend_names[$backend]="$block_label"
+      fi
     done < <(strip_comments < "$f")
-  done < <(nginx_site_files) | sort -u
+  done < <(nginx_site_files)
+
+  for backend in "${!backend_names[@]}"; do
+    printf '%s\t%s\n' "$backend" "${backend_names[$backend]}"
+  done | LC_ALL=C sort -t "$(printf '\t')" -k1,1
 }
 
 check_service_state() {
@@ -312,13 +406,18 @@ run_checks() {
     check_port_listening "$port" && LISTEN_PORT_OK+=(1) || LISTEN_PORT_OK+=(0)
   done <<< "$LISTEN_PORTS"
 
-  BACKENDS="$(discover_proxy_backends)"
+  BACKENDS=""
+  BACKEND_NAMES=()
+  BACKEND_SERVICES=()
   BACKEND_OK=()
-  while IFS= read -r backend; do
+  while IFS=$'\t' read -r backend backend_name; do
     [ -n "$backend" ] || continue
+    BACKENDS="${BACKENDS:+$BACKENDS$'\n'}$backend"
+    BACKEND_NAMES+=("${backend_name:-}")
     port="${backend##*:}"
+    BACKEND_SERVICES+=("$(backend_service_label "$port" || true)")
     check_port_listening "$port" && BACKEND_OK+=(1) || BACKEND_OK+=(0)
-  done <<< "$BACKENDS"
+  done < <(discover_proxy_backends)
 
   SYS_LOAD="$(awk '{print $1, $2, $3}' /proc/loadavg 2>/dev/null || echo 'n/a')"
   SYS_MEM="$(free -h 2>/dev/null | awk '/Mem:/ {print $3 " used / " $2 " total"}' || echo 'n/a')"
@@ -422,10 +521,16 @@ emit_text() {
     i=0
     while IFS= read -r backend; do
       [ -n "$backend" ] || continue
+      port="${backend##*:}"
+      name="${BACKEND_NAMES[$i]:-}"
+      service="${BACKEND_SERVICES[$i]:-}"
+      label="$port"
+      [ -n "$name" ] && label="${name} (port ${port})"
+      [ -n "$service" ] && label="${label} · ${service}"
       if [ "${BACKEND_OK[$i]:-0}" = "1" ]; then
-        echo "✅ port ${backend##*:}: listening"
+        echo "✅ ${label}: listening"
       else
-        echo "❌ port ${backend##*:}: not listening"
+        echo "❌ ${label}: not listening"
       fi
       echo "   → ${backend}"
       i=$((i + 1))
@@ -532,8 +637,10 @@ emit_json() {
     [ -n "$backend" ] || continue
     $first || printf ','
     first=false
-    printf '{"target":"%s","port":%s,"listening":%s}' \
+    printf '{"target":"%s","port":%s,"name":"%s","service":"%s","listening":%s}' \
       "$(json_escape "$backend")" "${backend##*:}" \
+      "$(json_escape "${BACKEND_NAMES[$i]:-}")" \
+      "$(json_escape "${BACKEND_SERVICES[$i]:-}")" \
       "$(json_bool "${BACKEND_OK[$i]:-0}")"
     i=$((i + 1))
   done <<< "$BACKENDS"

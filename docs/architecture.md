@@ -23,7 +23,7 @@ sites-enabled/*.conf
 │ nginx-glance.sh   │
 │  · domains        │──► curl -sI  http(s)://domain/
 │  · listen ports   │──► ss -ltn
-│  · proxy_pass     │──► ss -ltn (backend port)
+│  · proxy_pass     │──► ss -ltn (backend port + optional process name)
 │  · nginx.service  │──► systemctl is-active
 │  · system metrics │──► /proc, free, df
 └─────────┬─────────┘
@@ -41,6 +41,7 @@ sites-enabled/*.conf
 - Literal `server_name` hosts from enabled site files
 - HTTP/HTTPS response headers for `/`
 - Whether configured TCP ports are listening
+- Backend labels from `server_name` in the same nginx `server` block as `proxy_pass`
 - `nginx.service` active state
 - CPU load, memory, root filesystem use
 
@@ -72,6 +73,7 @@ See [ADR-0001](adr/0001-read-only-local-status.md).
 
 ## Related documents
 
+- [status.md](status.md)
 - [backend.md](backend.md)
 - [parsing.md](parsing.md)
 - [plasmoid.md](plasmoid.md)

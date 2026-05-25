@@ -85,6 +85,10 @@ Duplicate ports across files are deduplicated (`sort -nu`).
 
 Host must match `host:port` with numeric port or localhost/name with explicit port.
 
+Each backend is labeled with **`server_name`** tokens from the same `server { ... }` block as the `proxy_pass` line. If several blocks use the same target, names are merged (comma-separated, deduplicated).
+
+At check time, the script tries **`ss -ltnp`** for a process name on that port; if unavailable (common without elevated permissions), well-known ports map to hints (5432 → PostgreSQL, 3306 → MySQL/MariaDB, etc.).
+
 ### Skipped
 
 | Form | Reason |
@@ -120,6 +124,7 @@ NGINX_SITES_ENABLED=./testdata/nginx-sites-enabled ./nginx-glance.sh --text
 - Multiple `server` blocks append to the same discovery sets
 - `default_server` flag on `listen` is not interpreted separately
 
-## Related ADR
+## Related
 
+- [status.md](status.md)
 - [ADR-0003](adr/0003-discover-from-sites-enabled.md)

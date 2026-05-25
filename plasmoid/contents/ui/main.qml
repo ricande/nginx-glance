@@ -417,17 +417,38 @@ PlasmoidItem {
                         width: detailsColumn.width
                         height: backendRow.implicitHeight
 
-                        RowLayout {
+                        ColumnLayout {
                             id: backendRow
                             anchors.fill: parent
+                            spacing: 2
+                            width: parent.width
+
                             PC.Label {
-                                text: modelData.target
+                                text: modelData.name && modelData.name.length > 0
+                                    ? modelData.name
+                                    : modelData.target
+                                font.bold: modelData.name && modelData.name.length > 0
                                 Layout.fillWidth: true
                                 elide: Text.ElideRight
                             }
-                            PC.Label {
-                                text: modelData.listening ? qsTr("up") : qsTr("down")
-                                color: boolColor(modelData.listening)
+                            RowLayout {
+                                Layout.fillWidth: true
+                                PC.Label {
+                                    text: {
+                                        var parts = [modelData.target]
+                                        if (modelData.service && modelData.service.length > 0)
+                                            parts.push(modelData.service)
+                                        return parts.join(" · ")
+                                    }
+                                    opacity: 0.85
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
+                                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                                }
+                                PC.Label {
+                                    text: modelData.listening ? qsTr("up") : qsTr("down")
+                                    color: boolColor(modelData.listening)
+                                }
                             }
                         }
                     }

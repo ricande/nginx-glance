@@ -65,7 +65,7 @@ NGINX_GLANCE_CURL_TIMEOUT=1 ~/bin/nginx-glance.sh --json
 3. Domains (HTTP) — grouped by apex domain, blank line between groups
 4. Domains (HTTPS) — same order as HTTP
 5. Ports (nginx listen)
-6. Backends (proxy_pass) — omitted if none
+6. Backends (proxy_pass) — `server_name` label + process/service hint; omitted if none
 7. System (load, memory, disk)
 
 ## JSON schema
@@ -96,6 +96,16 @@ Top-level fields:
 | `backends_ok` | Backend ports listening |
 | `backends_missing` | Backend ports not listening |
 
+### Backend entry
+
+| Field | Description |
+|-------|-------------|
+| `target` | `host:port` from `proxy_pass` |
+| `port` | TCP port number |
+| `name` | `server_name`(s) from the same nginx `server` block (comma-separated if several) |
+| `service` | Process name from `ss -ltnp` when visible, else a hint for well-known DB ports (e.g. 5432 → PostgreSQL) |
+| `listening` | Whether the port accepts TCP connections locally |
+
 ### Domain entry
 
 ```json
@@ -112,11 +122,22 @@ Top-level fields:
 - **warn** — response line present but not 2xx/3xx
 - **error** — no response line
 
-### Port / backend entry
+### Port entry
 
 ```json
 { "port": 443, "listening": true }
-{ "target": "127.0.0.1:3000", "port": 3000, "listening": true }
+```
+
+### Backend entry (example)
+
+```json
+{
+  "target": "127.0.0.1:3000",
+  "port": 3000,
+  "name": "app.example.com,www.example.com",
+  "service": "next-server",
+  "listening": true
+}
 ```
 
 ## Dependencies (runtime)

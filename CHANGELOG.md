@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.1 — 2026-05-26
+
+### Added
+- Backend entries include `name` (from nginx `server_name` in the same `server` block as `proxy_pass`) and `service` (process from `ss -ltnp` or well-known port hint)
+- Plasmoid expanded view: backend name + target/service row
+
+### Changed
+- Text backends section shows `name (port N) · service` when available
+- Docs: [docs/status.md](docs/status.md) — project status, fixes, and remaining work
+
 ## 1.3.0 — 2026-05-26
 
 ### Changed

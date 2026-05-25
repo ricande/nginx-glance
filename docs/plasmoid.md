@@ -48,7 +48,7 @@ The widget should feel **glanceable, calm, compact, and readable** on a desktop 
 - Summary line under the title (not `InlineMessage`, to avoid overlap with headings)
 - `nginx.service` status
 - Per-domain HTTP/HTTPS (OK label or status line)
-- Listen ports and backends
+- Listen ports and backends (site **name**, target, **service** hint, up/down)
 - System line + host/timestamp footer
 
 ### Colors
@@ -150,11 +150,15 @@ Or remove and re-add the widget on the desktop.
 |---------|-----|
 | “Install ./install.sh” | Run installer from project clone |
 | Invalid JSON | Run `~/bin/nginx-glance.sh --json` in terminal |
+| `ScrollView is not a type` (old message) | Upgrade plasmoid + restart plasmashell — see [status.md](status.md) |
+| Layout overlap / text on title | Fixed in 1.2.5+; reinstall plasmoid and reload shell |
 | Widget feels slow | Lower `NGINX_GLANCE_CURL_TIMEOUT`; fewer domains |
-| Stale data | Normal if backend run exceeds 30s; wait for “Updating…” to clear |
+| Stale data | Normal if backend run exceeds 30s; wait for loading to clear |
 | Widget empty | Check Plasma logs; verify script executable |
+| `git pull` but no UI change | Run `./install.sh --plasmoid` and restart `plasma-plasmashell` |
 
-## Related ADR
+## Related
 
+- [status.md](status.md) — fixed widget issues and upgrade checklist
 - [ADR-0004](adr/0004-plasma6-plasmoid-thin-ui.md)
 - [ADR-0002](adr/0002-bash-backend-with-json-output.md)
