@@ -19,10 +19,85 @@ Usage: $0 [--plasmoid]
 EOF
 }
 
+# command -> typical Debian/Ubuntu package (for hints only)
+pkg_hint() {
+  case "$1" in
+    curl) echo "curl" ;;
+    systemctl) echo "systemd" ;;
+    ss) echo "iproute2" ;;
+    free) echo "procps" ;;
+    nginx) echo "nginx" ;;
+    *) echo "coreutils" ;;
+  esac
+}
+
+check_dependencies() {
+  local cmd missing=()
+  local -a required_cmds=(
+    bash curl systemctl ss awk sed grep head free df
+  )
+
+  echo "Checking dependencies ..."
+
+  for cmd in "${required_cmds[@]}"; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+      missing+=("$cmd")
+    fi
+  done
+
+  if [ "${#missing[@]}" -gt 0 ]; then
+    echo "ERROR: Missing required commands: ${missing[*]}" >&2
+    echo "Install hints (Debian/Ubuntu):" >&2
+    local seen="" pkg
+    for cmd in "${missing[@]}"; do
+      pkg="$(pkg_hint "$cmd")"
+      [[ " $seen " == *" $pkg "* ]] && continue
+      seen="$seen $pkg"
+      echo "  sudo apt install $pkg" >&2
+    done
+    exit 1
+  fi
+  echo "  Required CLI tools: OK"
+
+  if command -v nginx >/dev/null 2>&1; then
+    echo "  nginx binary: OK ($(command -v nginx))"
+  else
+    echo "  WARNING: nginx not found on PATH." >&2
+    echo "           nginx-glance reads site configs; install with: sudo apt install nginx" >&2
+  fi
+
+  if [ -d /etc/nginx/sites-enabled ]; then
+    echo "  /etc/nginx/sites-enabled: OK"
+  else
+    echo "  WARNING: /etc/nginx/sites-enabled not found." >&2
+    echo "           Set NGINX_SITES_ENABLED to your sites directory, or install nginx." >&2
+  fi
+
+  if systemctl list-unit-files nginx.service >/dev/null 2>&1; then
+    echo "  nginx.service unit: OK"
+  else
+    echo "  WARNING: nginx.service not found in systemd." >&2
+    echo "           Service status checks will report unknown until nginx is installed." >&2
+  fi
+
+  if $INSTALL_PLASMOID; then
+    if command -v kpackagetool6 >/dev/null 2>&1 || command -v kpackagetool-6 >/dev/null 2>&1; then
+      echo "  kpackagetool6 (plasmoid): OK"
+    else
+      echo "  NOTE: kpackagetool6 not found; script will install but plasmoid step needs manual run." >&2
+      echo "        Try: sudo apt install plasma-sdk  (or your distro's KDE dev package)" >&2
+    fi
+  fi
+
+  echo
+}
+
 install_script() {
   mkdir -p "$INSTALL_DIR"
   install -m 755 "$ROOT/nginx-glance.sh" "$TARGET"
   echo "Installed script: $TARGET"
+  echo "Run: $TARGET --text"
+  echo "Or:  $TARGET --json   (Plasma widget)"
 }
 
 install_plasmoid() {
@@ -64,6 +139,7 @@ for arg in "$@"; do
   esac
 done
 
+check_dependencies
 install_script
 
 if $INSTALL_PLASMOID; then
