@@ -39,6 +39,18 @@ Each token is validated separately.
 
 Function: `is_valid_server_name` in `nginx-glance.sh`
 
+### Display order
+
+After discovery, domains are ordered for `--text` and `--json`:
+
+1. **Group** by registrable apex (last two labels), e.g. `www.example.com` and `api.example.com` → `example.com`
+2. **Within group:** apex host first (`example.com`), then `www.example.com`, then other subdomains A–Z
+3. **Across groups:** alphabetical by apex name
+
+Text mode inserts a blank line when the apex group changes.
+
+Functions: `domain_apex_key`, `domain_sort_rank`, `sort_domains_ordered` in `nginx-glance.sh`
+
 ## `listen`
 
 ### Supported forms

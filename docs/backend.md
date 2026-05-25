@@ -62,8 +62,8 @@ NGINX_GLANCE_CURL_TIMEOUT=1 ~/bin/nginx-glance.sh --json
 
 1. Header (title, timestamp, host, config path)
 2. Nginx (`nginx.service`)
-3. Domains (HTTP)
-4. Domains (HTTPS)
+3. Domains (HTTP) — grouped by apex domain, blank line between groups
+4. Domains (HTTPS) — same order as HTTP
 5. Ports (nginx listen)
 6. Backends (proxy_pass) — omitted if none
 7. System (load, memory, disk)

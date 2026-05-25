@@ -95,8 +95,48 @@ is_valid_server_name() {
   return 0
 }
 
+# Apex key for grouping: example.com, www.example.com, api.example.com → example.com
+domain_apex_key() {
+  local d="$1"
+  local host="${d#www.}"
+  local IFS='.'
+  local -a parts=()
+  read -ra parts <<< "$host"
+  local n=${#parts[@]}
+  if [ "$n" -le 2 ]; then
+    printf '%s\n' "$host"
+  else
+    printf '%s\n' "${parts[$((n - 2))]}.${parts[$((n - 1))]}"
+  fi
+}
+
+# Sort rank within a group: apex (0), www (1), other subdomains (2)
+domain_sort_rank() {
+  local d="$1"
+  local apex
+  apex="$(domain_apex_key "$d")"
+  if [ "$d" = "$apex" ]; then
+    echo 0
+  elif [ "$d" = "www.${apex}" ]; then
+    echo 1
+  else
+    echo 2
+  fi
+}
+
+# Order: by apex alphabetically, then apex → www → subdomains A–Z
+sort_domains_ordered() {
+  local domain apex rank
+  while IFS= read -r domain; do
+    [ -n "$domain" ] || continue
+    apex="$(domain_apex_key "$domain")"
+    rank="$(domain_sort_rank "$domain")"
+    printf '%s\t%s\t%s\n' "$apex" "$rank" "$domain"
+  done | LC_ALL=C sort -t "$(printf '\t')" -k1,1 -k2,2n -k3,3 | cut -f3-
+}
+
 discover_domains() {
-  local f line part
+  local f line part raw=""
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     while IFS= read -r line; do
@@ -108,7 +148,7 @@ discover_domains() {
         is_valid_server_name "$part" && printf '%s\n' "$part"
       done
     done < <(strip_comments < "$f")
-  done < <(nginx_site_files) | sort -u
+  done < <(nginx_site_files) | LC_ALL=C sort -u | sort_domains_ordered
 }
 
 parse_listen_port() {
@@ -317,33 +357,49 @@ emit_text() {
   echo "Domains (HTTP)"
   echo "--------------"
   i=0
-  while IFS= read -r domain; do
-    [ -n "$domain" ] || continue
-    line="${DOMAIN_HTTP_LINE[$i]:-}"
-    level="${DOMAIN_HTTP_LEVEL[$i]:-error}"
-    case "$level" in
-      ok)   echo "✅ ${domain}/: ${line:-no response}" ;;
-      warn) echo "⚠️  ${domain}/: ${line:-no response}" ;;
-      *)    echo "❌ ${domain}/: no response" ;;
-    esac
-    i=$((i + 1))
-  done <<< "$DOMAINS"
+  {
+    local prev_apex="" cur_apex=""
+    while IFS= read -r domain; do
+      [ -n "$domain" ] || continue
+      cur_apex="$(domain_apex_key "$domain")"
+      if [ -n "$prev_apex" ] && [ "$cur_apex" != "$prev_apex" ]; then
+        echo
+      fi
+      prev_apex="$cur_apex"
+      line="${DOMAIN_HTTP_LINE[$i]:-}"
+      level="${DOMAIN_HTTP_LEVEL[$i]:-error}"
+      case "$level" in
+        ok)   echo "✅ ${domain}/: ${line:-no response}" ;;
+        warn) echo "⚠️  ${domain}/: ${line:-no response}" ;;
+        *)    echo "❌ ${domain}/: no response" ;;
+      esac
+      i=$((i + 1))
+    done <<< "$DOMAINS"
+  }
   echo
 
   echo "Domains (HTTPS)"
   echo "---------------"
   i=0
-  while IFS= read -r domain; do
-    [ -n "$domain" ] || continue
-    line="${DOMAIN_HTTPS_LINE[$i]:-}"
-    level="${DOMAIN_HTTPS_LEVEL[$i]:-error}"
-    case "$level" in
-      ok)   echo "✅ ${domain}/: ${line:-no response}" ;;
-      warn) echo "⚠️  ${domain}/: ${line:-no response}" ;;
-      *)    echo "❌ ${domain}/: no response" ;;
-    esac
-    i=$((i + 1))
-  done <<< "$DOMAINS"
+  {
+    local prev_apex="" cur_apex=""
+    while IFS= read -r domain; do
+      [ -n "$domain" ] || continue
+      cur_apex="$(domain_apex_key "$domain")"
+      if [ -n "$prev_apex" ] && [ "$cur_apex" != "$prev_apex" ]; then
+        echo
+      fi
+      prev_apex="$cur_apex"
+      line="${DOMAIN_HTTPS_LINE[$i]:-}"
+      level="${DOMAIN_HTTPS_LEVEL[$i]:-error}"
+      case "$level" in
+        ok)   echo "✅ ${domain}/: ${line:-no response}" ;;
+        warn) echo "⚠️  ${domain}/: ${line:-no response}" ;;
+        *)    echo "❌ ${domain}/: no response" ;;
+      esac
+      i=$((i + 1))
+    done <<< "$DOMAINS"
+  }
   echo
 
   echo "Ports (nginx listen)"

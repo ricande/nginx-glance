@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.0 — 2026-05-26
+
+### Changed
+- Domains grouped by registrable apex (`example.com`, `www.example.com`, subdomains together), sorted A–Z within each group
+- Text output: blank line between domain groups in HTTP/HTTPS sections
+
 ## 1.2.5 — 2026-05-26
 
 ### Fixed

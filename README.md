@@ -58,7 +58,7 @@ Refresh every 30–60 seconds.
 
 Then: right-click desktop → **Add Widgets** → **Nginx Glance**.
 
-Runs `$HOME/bin/nginx-glance.sh --json` every 30 seconds — compact green/yellow/red summary and an expanded domain list.
+Runs `$HOME/bin/nginx-glance.sh --json` every 30 seconds — compact summary and an expanded domain list (domains grouped and sorted; see [parsing.md](docs/parsing.md)).
 
 After upgrading the widget: `./install.sh --plasmoid`, then restart `plasma-plasmashell` or re-add the widget (`git pull` alone is not enough).
 
