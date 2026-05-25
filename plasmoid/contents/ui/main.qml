@@ -201,7 +201,7 @@ PlasmoidItem {
     }
 
     // --- Expanded: structured details (not raw logs) ---
-    ScrollView {
+    QQC2.ScrollView {
         id: fullView
         Layout.fillWidth: true
         Layout.fillHeight: true

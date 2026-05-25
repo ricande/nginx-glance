@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.3 — 2026-05-26
+
+### Fixed
+- Plasmoid: use `QQC2.ScrollView` (fixes Plasma 6 load error "ScrollView is not a type")
+
 ## 1.2.2 — 2026-05-26
 
 ### Fixed
