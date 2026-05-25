@@ -27,19 +27,24 @@ The widget should feel **glanceable, calm, compact, and readable** on a desktop 
 
 ## Runtime behavior
 
-1. On load, runs: `$HOME/bin/nginx-glance.sh --json` (single command string for the DataSource)
-2. **Timer** requests a new run every **30 seconds** — only if the previous run has finished
-3. Parses stdout as JSON; updates compact and full views
+1. On load, runs full check: `$HOME/bin/nginx-glance.sh --json`
+2. **Full refresh** every **20 seconds** (only if the previous full run has finished)
+3. **Waveform sample** every **500 ms** via `$HOME/bin/nginx-glance.sh --sample-json` (cheap; uses state cache)
+4. Parses JSON; ring buffers for global health (~**120** samples) and per-domain activity (~**80** samples each)
+5. Two executable commands: `--json` (full) and `--sample-json` (waveforms only — never runs full check twice per second)
 
 ### Overlapping refreshes
 
-`refreshRunning` prevents starting a new backend process while the previous executable job is still active. The timer fires every 30s, but `refreshStatus()` returns early until `onNewData` calls `finishRefresh()`.
+`refreshRunning` / `sampleRunning` prevent overlapping executable jobs. Full refresh waits until the previous `--json` completes; samples use `--sample-json` only.
 
 ### Compact view
 
-- Status dot (nginx / error / missing script)
+- Status dot (uses live `state` from sampler when available)
 - Short summary: domains healthy/total, ports listening, backends ok
-- “Updating…” during backend run
+- **Health %** and **bar sparkline** from `health_score` samples (not network traffic)
+- Sparkline auto-scales so a steady score still shows visible bars; label **steady** when flat
+- Colors: green = ok, neutral = degraded, red = error
+- “Updating…” during full backend run
 - `Updated HH:MM:SS` under summary (full timestamp in expanded footer)
 
 ### Full view
@@ -47,7 +52,11 @@ The widget should feel **glanceable, calm, compact, and readable** on a desktop 
 - Vertically stacked sections inside a `Flickable` (scroll when content exceeds widget size)
 - Summary line under the title (not `InlineMessage`, to avoid overlap with headings)
 - `nginx.service` status
-- Per-domain HTTP/HTTPS (OK label or status line)
+- Per-domain HTTP/HTTPS (OK label or status line) with **activity sparkline**
+  - Newest bar anchored at the **right edge** of the waveform zone; older samples appear to the **left** (toward the domain name)
+  - Left **text column** (~38% of row width): bold domain name, HTTP, HTTPS — fixed margin so bars never draw over labels
+  - Waveform zone uses `Layout.fillWidth` — **stretches and shrinks** when the widget is resized
+  - Activity from `domain_activity` in `--sample-json` (access log hits + health baseline)
 - Listen ports and backends (site **name**, target, **service** hint, up/down)
 - System line + host/timestamp footer
 
@@ -63,9 +72,10 @@ The widget should feel **glanceable, calm, compact, and readable** on a desktop 
 
 | Layer | Interval / duration |
 |-------|---------------------|
-| Widget timer | 30 seconds between *attempted* runs |
-| Backend runtime | ~`domains × 2 × NGINX_GLANCE_CURL_TIMEOUT` for curl (sequential) |
-| Visible freshness | When JSON returns — may be later than the timer tick if the backend is still running |
+| Full refresh | 20 seconds between *attempted* full `--json` runs |
+| Waveform sample | 500 ms `--sample-json` (no domain curl) |
+| Backend runtime (full only) | ~`domains × 2 × NGINX_GLANCE_CURL_TIMEOUT` for curl (sequential) |
+| Visible freshness | Summary/domain data updates on full run; waveform updates on each sample |
 
 Example: 7 domains, 2s timeout → up to ~28s curl time; the widget will not stack parallel runs.
 

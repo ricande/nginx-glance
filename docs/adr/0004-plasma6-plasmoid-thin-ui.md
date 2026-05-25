@@ -11,10 +11,11 @@ A native desktop widget is desired on Kubuntu (KDE Plasma 6). Command Output wid
 
 - Ship a **Plasma/Applet** under `plasmoid/`
 - Target **Plasma API 6.0** (`X-Plasma-API-Minimum-Version: 6.0`)
-- Widget runs **`$HOME/bin/nginx-glance.sh --json`** every 30 seconds
+- Widget uses **`$HOME/bin/nginx-glance.sh --json`** for full checks (~20 s) and **`--sample-json`** for waveforms (500 ms)
 - Use `org.kde.plasma.plasma5support` executable DataSource for process output
-- Compact view: summary counts and nginx status color
-- Full view: per-domain HTTP/HTTPS, ports, backends, system line
+- Compact view: summary counts, global health sparkline, nginx status color
+- Full view: per-domain HTTP/HTTPS with activity sparklines (text left, bars right), ports, backends, system line
+- State cache at `~/.cache/nginx-glance/state.json` bridges full checks and samples
 - Install via `./install.sh --plasmoid` when `kpackagetool6` is available
 
 ## Consequences

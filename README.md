@@ -58,7 +58,7 @@ Refresh every 30–60 seconds.
 
 Then: right-click desktop → **Add Widgets** → **Nginx Glance**.
 
-Runs `$HOME/bin/nginx-glance.sh --json` every 30 seconds — compact summary and an expanded domain list (domains grouped and sorted; see [parsing.md](docs/parsing.md)).
+Runs `$HOME/bin/nginx-glance.sh --json` about every 20 seconds and `--sample-json` every 500 ms — compact health sparkline plus per-domain activity bars in the expanded view (see [plasmoid.md](docs/plasmoid.md)).
 
 After upgrading the widget: `./install.sh --plasmoid`, then restart `plasma-plasmashell` or re-add the widget (`git pull` alone is not enough).
 
@@ -111,13 +111,14 @@ INSTALL_DIR=~/.local/bin ./install.sh
 ## Script usage
 
 ```bash
-nginx-glance.sh [--text|--json|--help]
+nginx-glance.sh [--text|--json|--sample-json|--help]
 ```
 
 | Option | Description |
 |--------|-------------|
 | `--text` | Human-readable report (default) |
-| `--json` | JSON for Plasma widget or automation |
+| `--json` | Full JSON for Plasma widget (writes state cache) |
+| `--sample-json` | Lightweight health sample for waveform polling (no domain curl) |
 | `--help` | Usage and environment variables |
 
 ### Environment
@@ -126,6 +127,8 @@ nginx-glance.sh [--text|--json|--help]
 |----------|---------|---------|
 | `NGINX_SITES_ENABLED` | `/etc/nginx/sites-enabled` | nginx site config directory |
 | `NGINX_GLANCE_CURL_TIMEOUT` | `2` | Per-request curl timeout in seconds (1–30) |
+| `NGINX_ACCESS_LOG` | `/var/log/nginx/access.log` | Access log for per-domain activity bars (sample mode) |
+| `NGINX_GLANCE_LOG_LINES` | `400` | Lines of access log scanned per sample |
 
 ### Examples
 
@@ -196,7 +199,7 @@ Read-only, local-first, no sudo. Rationale: [docs/adr/](docs/adr/).
 
 See **[docs/status.md](docs/status.md)** for:
 
-- What is **implemented** (backend, widget, docs)
+- What is **implemented** (backend, widget, waveforms, docs)
 - What was **fixed** (Plasma load errors, layout overlap, timestamps, domain order)
 - What is **remaining** (custom health paths, notifications, cert expiry, etc.)
 - **Upgrade checklist** after `git pull`

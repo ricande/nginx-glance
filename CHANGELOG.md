@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.5.0 — 2026-05-26
+
+### Added
+- Per-domain **activity sparklines** in expanded plasmoid view (newest bar on the **right**, history scrolls **left** toward the site name)
+- `--sample-json` field `domain_activity[]` — per-domain `activity` 0–100 from cache baseline + nginx access log hits (`NGINX_ACCESS_LOG`, `NGINX_GLANCE_LOG_LINES`)
+- State cache includes `domains[]` with `name` and `baseline` for sampling
+- Compact plasmoid: bar sparkline for global `health_score` (auto-scaled; “steady” when flat)
+
+### Changed
+- Expanded domain row layout: ~38% left column for name/HTTP/HTTPS, waveform zone fills remaining width (scales with widget resize)
+- Plasmoid sampling docs and troubleshooting aligned with bar sparklines (not Canvas)
+
+## 1.4.0 — 2026-05-26
+
+### Added
+- `--sample-json` — lightweight sampler (no domain curl): `health_score`, `state`, cached summary, live nginx + port/backend socket checks
+- State cache at `$XDG_CACHE_HOME/nginx-glance/state.json` (written on each full `--json` run)
+- Full JSON includes `health_score` and `state`
+- Plasmoid: global health sparkline (~120 samples), 500 ms sampling; full refresh every 20 s
+
+### Changed
+- Plasmoid no longer runs full `--json` on the same interval as the waveform (avoids duplicate heavy checks)
+
 ## 1.3.1 — 2026-05-26
 
 ### Added

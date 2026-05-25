@@ -30,9 +30,22 @@ sites-enabled/*.conf
           │
     ┌─────┴─────┐
     ▼           ▼
- --text      --json
- (terminal)  (plasmoid / automation)
+ --text      --json              --sample-json
+ (terminal)  (plasmoid full)     (plasmoid waveforms / 500 ms)
+                    │
+                    ▼
+            ~/.cache/nginx-glance/state.json
+            (summary, ports, domain baselines)
 ```
+
+## Sampling (Plasma widget)
+
+| Mode | Interval | Work |
+|------|----------|------|
+| Full `--json` | ~20 s | Discover config, curl all domains, write cache |
+| `--sample-json` | 500 ms | Read cache, `systemctl` nginx, one `ss` snapshot, tail access log for per-domain activity |
+
+The widget never runs a full health check twice per second; waveforms use sample output only.
 
 ## Boundaries
 

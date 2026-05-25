@@ -2,7 +2,7 @@
 
 Living overview of what is **done**, what was **fixed** (especially Plasma widget issues), and what is **left to do**. For release-by-release notes see [CHANGELOG.md](../CHANGELOG.md).
 
-**Current version:** 1.3.1 (see [CHANGELOG](../CHANGELOG.md))
+**Current version:** 1.5.0 (see [CHANGELOG](../CHANGELOG.md))
 
 ---
 
@@ -21,6 +21,10 @@ Living overview of what is **done**, what was **fixed** (especially Plasma widge
 | `NGINX_GLANCE_CURL_TIMEOUT` (1–30 s) | ✅ |
 | Domain grouping by apex + alphabetical order | ✅ (since 1.3.0) |
 | Backend labels: `name` from `server_name`, `service` from `ss`/known ports | ✅ (since 1.3.1) |
+| `--sample-json` + state cache + `health_score` / `state` | ✅ (since 1.4.0) |
+| `domain_activity` in sample (access log + baseline) | ✅ (since 1.5.0) |
+| Plasmoid global health sparkline (500 ms sample, 20 s full refresh) | ✅ (since 1.4.0) |
+| Per-domain activity sparklines in expanded view | ✅ (since 1.5.0) |
 
 ### Installer
 
@@ -34,9 +38,9 @@ Living overview of what is **done**, what was **fixed** (especially Plasma widge
 
 | Area | Status |
 |------|--------|
-| Compact summary (dot, domains/ports/backends counts) | ✅ |
-| Expanded scrollable detail (domains, ports, backends, system) | ✅ |
-| 30 s refresh; no overlapping backend runs | ✅ |
+| Compact summary + global health sparkline | ✅ |
+| Expanded detail with per-domain waveforms (text left, bars right) | ✅ |
+| 20 s full refresh; 500 ms sample; no overlapping runs | ✅ |
 | Home path via `StandardPaths` | ✅ |
 | Exit `127` → install hint; other errors → backend failure | ✅ |
 
@@ -82,7 +86,7 @@ Living overview of what is **done**, what was **fixed** (especially Plasma widge
 |------|--------|
 | Custom health path per domain | Today: always `/` ([ADR-0006](adr/0006-health-check-root-path.md)) |
 | Failure notifications | No alerting; would need external wrapper on `--json` |
-| Log / history over time | Single snapshot only; no persistence |
+| Log / history over time | In-memory ring buffers in plasmoid only (not persisted across restarts) |
 | TLS certificate expiry (read-only) | Not implemented |
 
 ### Known limitations (by design)
@@ -94,7 +98,8 @@ Living overview of what is **done**, what was **fixed** (especially Plasma widge
 | Backends only from `proxy_pass` | Standalone DB ports (e.g. PostgreSQL on 5432) not listed unless proxied |
 | Process names from `ss` | Often empty without elevated permissions; falls back to port hints (5432 → PostgreSQL, etc.) |
 | Apex grouping heuristic | Last two labels (`example.com`); not a full public-suffix list |
-| Sequential curl | Large domain lists × timeout can exceed 30 s widget interval |
+| Sequential curl | Large domain lists × timeout can exceed 20 s full-refresh interval |
+| Per-domain activity without log | Falls back to health baseline until access log is readable |
 
 ### Optional improvements (not scheduled)
 
@@ -121,6 +126,7 @@ Verify:
 ```bash
 ~/bin/nginx-glance.sh --text
 ~/bin/nginx-glance.sh --json | python3 -m json.tool
+~/bin/nginx-glance.sh --sample-json | python3 -m json.tool
 ```
 
 ---

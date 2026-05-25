@@ -6,6 +6,12 @@ NGINX_SITES_ENABLED="${NGINX_SITES_ENABLED:-/etc/nginx/sites-enabled}"
 OUTPUT_MODE="text"
 CURL_TIMEOUT=2
 
+# Populated by full checks; used for cache write and health_score
+BACKEND_NAMES=()
+BACKEND_SERVICES=()
+CACHE_FILE=""
+SS_LISTEN_SNAPSHOT=""
+
 init_curl_timeout() {
   local raw="${NGINX_GLANCE_CURL_TIMEOUT:-2}"
   if [[ "$raw" =~ ^[0-9]+$ ]] && [ "$raw" -ge 1 ] && [ "$raw" -le 30 ]; then
@@ -43,20 +49,345 @@ Usage:
   nginx-glance.sh [--text|--json|--help]
 
 Options:
-  --text   Human-readable output (default)
-  --json   Machine-readable JSON for Plasma widgets
-  --help   Show this help
+  --text         Human-readable output (default)
+  --json         Full machine-readable JSON (curl per domain; writes state cache)
+  --sample-json  Lightweight sample for waveform polling (no domain curl; uses cache)
+  --help         Show this help
 
 Environment:
   NGINX_SITES_ENABLED        Path to nginx sites-enabled directory
                              (default: /etc/nginx/sites-enabled)
   NGINX_GLANCE_CURL_TIMEOUT  Per-request curl timeout in seconds (1–30, default: 2)
+  NGINX_ACCESS_LOG           Access log for per-domain activity in --sample-json
+                             (default: /var/log/nginx/access.log, skip if unreadable)
+  NGINX_GLANCE_LOG_LINES     Lines of access log to scan per sample (default: 400)
 
 Examples:
   nginx-glance.sh
   nginx-glance.sh --json
+  nginx-glance.sh --sample-json
   NGINX_SITES_ENABLED=./testdata/nginx-sites-enabled nginx-glance.sh --json
 EOF
+}
+
+cache_file_path() {
+  local base="${XDG_CACHE_HOME:-$HOME/.cache}"
+  printf '%s/nginx-glance/state.json' "$base"
+}
+
+capture_listen_snapshot() {
+  SS_LISTEN_SNAPSHOT="$(ss -ltn 2>/dev/null | awk '{print $4}' || true)"
+}
+
+port_open_in_snapshot() {
+  local port="$1"
+  [ -n "$port" ] && [ -n "$SS_LISTEN_SNAPSHOT" ] && \
+    printf '%s\n' "$SS_LISTEN_SNAPSHOT" | grep -qE "[:.]${port}([[:space:]]|$)"
+}
+
+compute_health_score() {
+  local nginx_pts=0 domain_pts=0 port_pts=0 backend_pts=0
+  local dt dl pt bt healthy
+
+  $NGINX_SVC_OK && nginx_pts=30 || nginx_pts=0
+
+  dt="${CACHE_DOMAINS_TOTAL:-0}"
+  healthy="${CACHE_DOMAINS_HEALTHY:-0}"
+  if [ "$dt" -gt 0 ] 2>/dev/null; then
+    domain_pts=$((healthy * 40 / dt))
+  else
+    domain_pts=40
+  fi
+
+  pt="${CACHE_PORTS_TOTAL:-0}"
+  dl="${CACHE_PORTS_LISTENING:-0}"
+  if [ "$pt" -gt 0 ] 2>/dev/null; then
+    port_pts=$((dl * 15 / pt))
+  else
+    port_pts=15
+  fi
+
+  bt="${CACHE_BACKENDS_TOTAL:-0}"
+  bl="${CACHE_BACKENDS_OK:-0}"
+  if [ "$bt" -gt 0 ] 2>/dev/null; then
+    backend_pts=$((bl * 15 / bt))
+  else
+    backend_pts=15
+  fi
+
+  echo $((nginx_pts + domain_pts + port_pts + backend_pts))
+}
+
+health_state_from_score() {
+  local score="$1"
+  if ! $NGINX_SVC_OK || [ "$score" -lt 40 ]; then
+    printf 'error'
+  elif [ "$score" -lt 85 ]; then
+    printf 'degraded'
+  else
+    printf 'ok'
+  fi
+}
+
+write_state_cache() {
+  local cache_dir port backend i first=true
+  CACHE_FILE="$(cache_file_path)"
+  cache_dir="$(dirname "$CACHE_FILE")"
+  mkdir -p "$cache_dir" || return 0
+
+  local domain_count=0 healthy=0 unhealthy=0
+  while IFS= read -r domain; do
+    [ -n "$domain" ] || continue
+    domain_count=$((domain_count + 1))
+    i=$((domain_count - 1))
+    if [ "${DOMAIN_HTTP_OK[$i]:-0}" = "1" ] && [ "${DOMAIN_HTTPS_OK[$i]:-0}" = "1" ]; then
+      healthy=$((healthy + 1))
+    else
+      unhealthy=$((unhealthy + 1))
+    fi
+  done <<< "$DOMAINS"
+  unhealthy=$((domain_count - healthy))
+
+  local port_ok port_total=0 backend_ok backend_total=0
+  port_ok="$(count_ok LISTEN_PORT_OK)"
+  while IFS= read -r port; do
+    [ -n "$port" ] || continue
+    port_total=$((port_total + 1))
+  done <<< "$LISTEN_PORTS"
+
+  backend_ok="$(count_ok BACKEND_OK)"
+  while IFS= read -r backend; do
+    [ -n "$backend" ] || continue
+    backend_total=$((backend_total + 1))
+  done <<< "$BACKENDS"
+
+  CACHE_DOMAINS_TOTAL=$domain_count
+  CACHE_DOMAINS_HEALTHY=$healthy
+  CACHE_PORTS_TOTAL=$port_total
+  CACHE_PORTS_LISTENING=$port_ok
+  CACHE_BACKENDS_TOTAL=$backend_total
+  CACHE_BACKENDS_OK=$backend_ok
+
+  local score state cached_epoch
+  score="$(compute_health_score)"
+  state="$(health_state_from_score "$score")"
+  cached_epoch="$(date +%s)"
+
+  {
+    printf '{'
+    printf '"cached_at":"%s",' "$(json_escape "$TIMESTAMP")"
+    printf '"cached_at_epoch":%s,' "$cached_epoch"
+    printf '"health_score":%s,' "$score"
+    printf '"state":"%s",' "$(json_escape "$state")"
+    printf '"nginx_ok":%s,' "$(json_bool "$($NGINX_SVC_OK && echo 1 || echo 0)")"
+    printf '"summary":{'
+    printf '"domains_total":%s,"domains_healthy":%s,"domains_unhealthy":%s,' \
+      "$domain_count" "$healthy" "$unhealthy"
+    printf '"ports_listening":%s,"ports_missing":%s,' \
+      "$port_ok" "$((port_total - port_ok))"
+    printf '"backends_ok":%s,"backends_missing":%s' \
+      "$backend_ok" "$((backend_total - backend_ok))"
+    printf '},'
+    printf '"listen_ports":['
+    first=true
+    while IFS= read -r port; do
+      [ -n "$port" ] || continue
+      $first || printf ','
+      first=false
+      printf '%s' "$port"
+    done <<< "$LISTEN_PORTS"
+    printf '],'
+    printf '"backend_ports":['
+    first=true
+    while IFS= read -r backend; do
+      [ -n "$backend" ] || continue
+      $first || printf ','
+      first=false
+      printf '%s' "${backend##*:}"
+    done <<< "$BACKENDS"
+    printf '],'
+    printf '"domains":['
+    first=true
+    i=0
+    while IFS= read -r domain; do
+      [ -n "$domain" ] || continue
+      $first || printf ','
+      first=false
+      baseline=15
+      if [ "${DOMAIN_HTTP_OK[$i]:-0}" = "1" ] && [ "${DOMAIN_HTTPS_OK[$i]:-0}" = "1" ]; then
+        baseline=100
+      elif [ "${DOMAIN_HTTP_OK[$i]:-0}" = "1" ] || [ "${DOMAIN_HTTPS_OK[$i]:-0}" = "1" ]; then
+        baseline=55
+      fi
+      printf '{"name":"%s","baseline":%s}' "$(json_escape "$domain")" "$baseline"
+      i=$((i + 1))
+    done <<< "$DOMAINS"
+    printf ']'
+    printf '}\n'
+  } >"$CACHE_FILE"
+}
+
+emit_domain_activity_array() {
+  local cache_file first=true
+  cache_file="$(cache_file_path)"
+
+  if ! $CACHE_VALID || [ ! -f "$cache_file" ] || ! command -v python3 >/dev/null 2>&1; then
+    printf '[]'
+    return
+  fi
+
+  NGINX_ACCESS_LOG="${NGINX_ACCESS_LOG:-/var/log/nginx/access.log}"
+  NGINX_GLANCE_LOG_LINES="${NGINX_GLANCE_LOG_LINES:-400}"
+
+  python3 - "$cache_file" "$NGINX_ACCESS_LOG" "$NGINX_GLANCE_LOG_LINES" <<'PY'
+import json, sys, subprocess
+
+cache_path, log_path, line_limit = sys.argv[1], sys.argv[2], int(sys.argv[3])
+with open(cache_path) as f:
+    data = json.load(f)
+domains = data.get("domains") or []
+
+log_lines = []
+try:
+    out = subprocess.run(
+        ["tail", "-n", str(line_limit), log_path],
+        capture_output=True, text=True, timeout=1, check=False,
+    )
+    if out.returncode == 0:
+        log_lines = out.stdout.splitlines()
+except (OSError, subprocess.TimeoutExpired):
+    log_lines = []
+
+items = []
+for entry in domains:
+    name = entry.get("name") or ""
+    if not name:
+        continue
+    baseline = int(entry.get("baseline") or 0)
+    hits = sum(1 for ln in log_lines if name in ln)
+    if hits > 0:
+        bump = min(100, hits * 8)
+        activity = (baseline * 35 + bump * 65) // 100
+    else:
+        activity = baseline
+    activity = max(5, min(100, activity))
+    items.append({"name": name, "activity": activity})
+
+print(json.dumps(items, separators=(",", ":")))
+PY
+}
+
+load_state_cache() {
+  CACHE_FILE="$(cache_file_path)"
+  CACHE_VALID=false
+  CACHE_AGE_SEC=-1
+  CACHE_DOMAINS_TOTAL=0
+  CACHE_DOMAINS_HEALTHY=0
+  CACHE_PORTS_TOTAL=0
+  CACHE_PORTS_LISTENING=0
+  CACHE_BACKENDS_TOTAL=0
+  CACHE_BACKENDS_OK=0
+  CACHE_LISTEN_PORTS=""
+  CACHE_BACKEND_PORTS=""
+
+  [ -f "$CACHE_FILE" ] || return 1
+
+  if command -v python3 >/dev/null 2>&1; then
+    eval "$(python3 - "$CACHE_FILE" <<'PY'
+import json, sys, time
+path = sys.argv[1]
+with open(path) as f:
+    d = json.load(f)
+s = d.get("summary") or {}
+epoch = int(d.get("cached_at_epoch") or 0)
+age = int(time.time() - epoch) if epoch else -1
+ports = d.get("listen_ports") or []
+backs = d.get("backend_ports") or []
+print(f"CACHE_VALID=true")
+print(f"CACHE_AGE_SEC={age}")
+print(f"CACHE_DOMAINS_TOTAL={int(s.get('domains_total') or 0)}")
+print(f"CACHE_DOMAINS_HEALTHY={int(s.get('domains_healthy') or 0)}")
+print(f"CACHE_PORTS_TOTAL={len(ports)}")
+print(f"CACHE_PORTS_LISTENING={int(s.get('ports_listening') or 0)}")
+print(f"CACHE_BACKENDS_TOTAL={len(backs)}")
+print(f"CACHE_BACKENDS_OK={int(s.get('backends_ok') or 0)}")
+print("CACHE_LISTEN_PORTS=" + ",".join(str(p) for p in ports))
+print("CACHE_BACKEND_PORTS=" + ",".join(str(p) for p in backs))
+PY
+)"
+    return 0
+  fi
+  return 1
+}
+
+run_sample_checks() {
+  TIMESTAMP="$(date '+%Y-%m-%d %H:%M:%S')"
+  load_state_cache || true
+  check_service_state nginx.service
+  capture_listen_snapshot
+
+  local port backend live_ports=0 live_backends=0 pt=0 bt=0
+
+  if [ -n "${CACHE_LISTEN_PORTS:-}" ]; then
+    IFS=',' read -ra _listen_ports <<< "$CACHE_LISTEN_PORTS"
+    for port in "${_listen_ports[@]}"; do
+      [ -n "$port" ] || continue
+      pt=$((pt + 1))
+      port_open_in_snapshot "$port" && live_ports=$((live_ports + 1))
+    done
+  fi
+
+  if [ -n "${CACHE_BACKEND_PORTS:-}" ]; then
+    IFS=',' read -ra _backend_ports <<< "$CACHE_BACKEND_PORTS"
+    for port in "${_backend_ports[@]}"; do
+      [ -n "$port" ] || continue
+      bt=$((bt + 1))
+      port_open_in_snapshot "$port" && live_backends=$((live_backends + 1))
+    done
+  fi
+
+  CACHE_PORTS_TOTAL=$pt
+  CACHE_PORTS_LISTENING=$live_ports
+  CACHE_BACKENDS_TOTAL=$bt
+  CACHE_BACKENDS_OK=$live_backends
+}
+
+emit_sample_json() {
+  local score state
+  run_sample_checks
+  score="$(compute_health_score)"
+  state="$(health_state_from_score "$score")"
+
+  printf '{'
+  printf '"mode":"sample",'
+  printf '"timestamp":"%s",' "$(json_escape "$TIMESTAMP")"
+  printf '"health_score":%s,' "$score"
+  printf '"state":"%s",' "$(json_escape "$state")"
+  printf '"nginx_ok":%s,' "$(json_bool "$($NGINX_SVC_OK && echo 1 || echo 0)")"
+  printf '"cache_valid":%s,' "$(json_bool "$($CACHE_VALID && echo 1 || echo 0)")"
+  printf '"cache_age_sec":%s,' "${CACHE_AGE_SEC:--1}"
+  printf '"summary":{'
+  local du=0
+  du=$((CACHE_DOMAINS_TOTAL - CACHE_DOMAINS_HEALTHY))
+  [ "$du" -lt 0 ] && du=0
+  printf '"domains_total":%s,"domains_healthy":%s,"domains_unhealthy":%s,' \
+    "${CACHE_DOMAINS_TOTAL:-0}" \
+    "${CACHE_DOMAINS_HEALTHY:-0}" \
+    "$du"
+  printf '"ports_listening":%s,"ports_missing":%s,' \
+    "${CACHE_PORTS_LISTENING:-0}" \
+    "$((CACHE_PORTS_TOTAL - CACHE_PORTS_LISTENING))"
+  printf '"backends_ok":%s,"backends_missing":%s' \
+    "${CACHE_BACKENDS_OK:-0}" \
+    "$((CACHE_BACKENDS_TOTAL - CACHE_BACKENDS_OK))"
+  printf '},'
+  printf '"ports_up":%s,"ports_total":%s,' \
+    "${CACHE_PORTS_LISTENING:-0}" "${CACHE_PORTS_TOTAL:-0}"
+  printf '"backends_up":%s,"backends_total":%s,' \
+    "${CACHE_BACKENDS_OK:-0}" "${CACHE_BACKENDS_TOTAL:-0}"
+  printf '"domain_activity":'
+  emit_domain_activity_array
+  printf '}\n'
 }
 
 json_escape() {
@@ -580,8 +911,20 @@ emit_json() {
   done <<< "$BACKENDS"
   backend_missing=$((backend_missing - backend_ok))
 
+  CACHE_DOMAINS_TOTAL=$domain_count
+  CACHE_DOMAINS_HEALTHY=$healthy
+  CACHE_PORTS_TOTAL=$((port_ok + port_missing))
+  CACHE_PORTS_LISTENING=$port_ok
+  CACHE_BACKENDS_TOTAL=$((backend_ok + backend_missing))
+  CACHE_BACKENDS_OK=$backend_ok
+  local health_score health_state
+  health_score="$(compute_health_score)"
+  health_state="$(health_state_from_score "$health_score")"
+
   printf '{'
   printf '"timestamp":"%s",' "$(json_escape "$TIMESTAMP")"
+  printf '"health_score":%s,' "$health_score"
+  printf '"state":"%s",' "$(json_escape "$health_state")"
   printf '"host":"%s",' "$(json_escape "$HOSTNAME")"
   printf '"config_path":"%s",' "$(json_escape "$NGINX_SITES_ENABLED")"
   if $NGINX_SVC_OK; then
@@ -651,12 +994,14 @@ emit_json() {
     "$(json_escape "$SYS_MEM")" \
     "$(json_escape "$SYS_DISK")"
   printf '}\n'
+  write_state_cache
 }
 
 parse_args() {
   case "${1:-}" in
     ""|--text) OUTPUT_MODE="text" ;;
     --json) OUTPUT_MODE="json" ;;
+    --sample-json) OUTPUT_MODE="sample-json" ;;
     --help|-h) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -664,6 +1009,10 @@ parse_args() {
 
 main() {
   parse_args "${1:-}"
+  if [ "$OUTPUT_MODE" = "sample-json" ]; then
+    emit_sample_json
+    return
+  fi
   if [ ! -d "$NGINX_SITES_ENABLED" ]; then
     echo "nginx-glance: directory not found: $NGINX_SITES_ENABLED" >&2
     exit 1

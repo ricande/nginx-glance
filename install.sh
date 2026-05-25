@@ -97,7 +97,8 @@ install_script() {
   install -m 755 "$ROOT/nginx-glance.sh" "$TARGET"
   echo "Installed script: $TARGET"
   echo "Run: $TARGET --text"
-  echo "Or:  $TARGET --json   (Plasma widget)"
+  echo "Or:  $TARGET --json   (Plasma widget, full check)"
+  echo "     $TARGET --sample-json   (Plasma waveforms)"
 }
 
 install_plasmoid() {

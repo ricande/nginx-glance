@@ -3,14 +3,15 @@
 ## Entry points
 
 ```bash
-nginx-glance.sh [--text|--json|--help]
+nginx-glance.sh [--text|--json|--sample-json|--help]
 ```
 
 | Flag | Behavior |
 |------|----------|
 | *(none)* | Same as `--text` |
 | `--text` | Human-readable sections with ✅ ⚠️ ❌ |
-| `--json` | Single JSON object on stdout |
+| `--json` | Single JSON object on stdout; writes state cache |
+| `--sample-json` | Lightweight sample JSON (waveform polling; uses cache + live sockets) |
 | `--help` | Usage; exits 0 |
 
 ## Environment
@@ -19,6 +20,8 @@ nginx-glance.sh [--text|--json|--help]
 |----------|---------|-------------|
 | `NGINX_SITES_ENABLED` | `/etc/nginx/sites-enabled` | Directory of enabled site config files |
 | `NGINX_GLANCE_CURL_TIMEOUT` | `2` | Per-request curl timeout in seconds (integer **1–30**) |
+| `NGINX_ACCESS_LOG` | `/var/log/nginx/access.log` | Access log for per-domain activity in `--sample-json` (skipped if unreadable) |
+| `NGINX_GLANCE_LOG_LINES` | `400` | Tail lines of access log scanned per sample |
 
 Invalid or out-of-range `NGINX_GLANCE_CURL_TIMEOUT` values fall back to **2**.
 
@@ -50,7 +53,7 @@ domains × 2 protocols × NGINX_GLANCE_CURL_TIMEOUT
 
 Example: 5 domains, timeout 2s → up to ~20s spent in curl alone (plus `ss`, `systemctl`, parsing).
 
-The Plasma widget **polls every 30 seconds**, but **fresh data appears only after the backend finishes**. If a run is still in progress, the widget skips starting another until the current run completes (see [plasmoid.md](plasmoid.md)).
+The Plasma widget runs a **full** `--json` check about every **20 seconds** and **`--sample-json` every 500 ms**. Domain HTTP/HTTPS data updates only after a full run finishes; waveforms update on each sample (see [plasmoid.md](plasmoid.md)).
 
 Lower timeout for snappier local panels:
 
@@ -75,6 +78,8 @@ Top-level fields:
 | Field | Type | Description |
 |-------|------|-------------|
 | `timestamp` | string | Local time `YYYY-MM-DD HH:MM:SS` |
+| `health_score` | number | 0–100 composite score (full check and sample) |
+| `state` | string | `ok` \| `degraded` \| `error` |
 | `host` | string | Short hostname |
 | `config_path` | string | Value of `NGINX_SITES_ENABLED` |
 | `nginx` | object | `service`, `status`, `ok` |
@@ -145,6 +150,42 @@ Top-level fields:
 `bash`, `curl`, `systemctl`, `ss`, `awk`, `sed`, `grep`, `head`, `free`, `df`
 
 Checked at install time — see [install-and-dependencies.md](install-and-dependencies.md).
+
+## State cache and sampling
+
+After each full `--json` run, a cache file is written (default: `~/.cache/nginx-glance/state.json`) with summary counts, port lists, and per-domain `baseline` activity scores from the last HTTP/HTTPS check.
+
+`--sample-json` is safe to run every **500 ms** (e.g. from the plasmoid waveform). It:
+
+- Does **not** curl domains
+- Reads summary domain counts from cache
+- Re-checks `nginx.service` and whether cached listen/backend TCP ports are open (one `ss -ltn` snapshot)
+
+Sample output includes `mode: "sample"`, `health_score`, `state`, `cache_valid`, `cache_age_sec`, `summary`, `ports_up` / `ports_total`, `backends_up` / `backends_total`, and `domain_activity`.
+
+### `domain_activity` entry (sample only)
+
+```json
+{ "name": "example.com", "activity": 72 }
+```
+
+| Field | Description |
+|-------|-------------|
+| `name` | `server_name` from cache |
+| `activity` | 0–100; blends cached **baseline** (HTTP/HTTPS OK) with recent hits in `NGINX_ACCESS_LOG` |
+
+Baseline: both OK → 100; one OK → 55; neither → 15. If the domain string appears in the tailed access log, activity is boosted (capped at 100). Without a readable log, `activity` equals `baseline` (steady bars until traffic arrives).
+
+### `health_score` weights (full and sample)
+
+| Component | Weight |
+|-----------|--------|
+| nginx.service active | 30 |
+| Domains healthy / total (from cache in sample) | 40 |
+| Listen ports up / total (live in sample) | 15 |
+| Backend ports up / total (live in sample) | 15 |
+
+`state`: **error** if nginx down or score &lt; 40; **degraded** if score &lt; 85; else **ok**.
 
 ## Fast local testing
 
