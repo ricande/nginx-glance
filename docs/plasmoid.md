@@ -14,6 +14,7 @@ plasmoid/
 | **Name** | Nginx Glance |
 | **Minimum Plasma** | 6.0 |
 | **Entry QML** | `contents/ui/main.qml` (no `X-Plasma-MainScript` — Plasma 6 resolves this automatically) |
+| **Expanded scroll** | `Flickable` (not `QQC2.ScrollView` — unavailable in applet loader) |
 
 ## UI design goals
 

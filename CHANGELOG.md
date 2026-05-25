@@ -1,9 +1,14 @@
 # Changelog
 
+## 1.2.4 — 2026-05-26
+
+### Fixed
+- Plasmoid: expanded view uses `Flickable` instead of `ScrollView` (Plasma 6 applet loader)
+
 ## 1.2.3 — 2026-05-26
 
 ### Fixed
-- Plasmoid: use `QQC2.ScrollView` (fixes Plasma 6 load error "ScrollView is not a type")
+- Plasmoid: use `QQC2.ScrollView` (did not fix Plasma 6 loader — superseded by Flickable)
 
 ## 1.2.2 — 2026-05-26
 

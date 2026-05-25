@@ -1,6 +1,5 @@
 import QtQuick
 import QtQuick.Layouts
-import QtQuick.Controls as QQC2
 import QtCore
 import org.kde.plasma.plasmoid
 import org.kde.plasma.components as PC
@@ -201,16 +200,21 @@ PlasmoidItem {
     }
 
     // --- Expanded: structured details (not raw logs) ---
-    QQC2.ScrollView {
+    // Flickable: QtQuick core type (Plasma 6 plasmoids do not load QQC2.ScrollView)
+    Flickable {
         id: fullView
         Layout.fillWidth: true
         Layout.fillHeight: true
         Layout.minimumWidth: Kirigami.Units.gridUnit * 22
         Layout.minimumHeight: Kirigami.Units.gridUnit * 18
         clip: true
+        contentWidth: width
+        contentHeight: fullContent.implicitHeight
+        boundsBehavior: Flickable.StopAtBounds
 
         ColumnLayout {
-            width: fullView.availableWidth
+            id: fullContent
+            width: fullView.width
             spacing: Kirigami.Units.mediumSpacing
 
             RowLayout {
