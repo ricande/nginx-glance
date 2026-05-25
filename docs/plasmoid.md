@@ -14,13 +14,14 @@ plasmoid/
 | **Name** | Nginx Glance |
 | **Minimum Plasma** | 6.0 |
 | **Entry QML** | `contents/ui/main.qml` (no `X-Plasma-MainScript` — Plasma 6 resolves this automatically) |
-| **Expanded scroll** | `Flickable` (not `QQC2.ScrollView` — unavailable in applet loader) |
+| **Expanded scroll** | `Flickable` + `Column` (`contentHeight` bound — avoids stacked-overlap in `ScrollView`/`ColumnLayout`) |
+| **Representations** | Inline `compactRepresentation` / `fullRepresentation` only (no extra root `Item` siblings) |
 
 ## UI design goals
 
 The widget should feel **glanceable, calm, compact, and readable** on a desktop or panel:
 
-- **Compact view** — one clear status dot and a short summary line (domains, ports, backends); timestamp subdued; “Updating…” while a run is in flight
+- **Compact view** — one clear status dot and a short summary line (domains, ports, backends); `Updated HH:MM:SS` under the summary (not over the title); grey dot while loading
 - **Expanded view** — structured sections (nginx, domains, ports, backends, system), not a raw log dump; OK shown simply, problems show status text
 - **No health logic in QML** — colors and counts come from backend JSON only
 
@@ -39,11 +40,12 @@ The widget should feel **glanceable, calm, compact, and readable** on a desktop 
 - Status dot (nginx / error / missing script)
 - Short summary: domains healthy/total, ports listening, backends ok
 - “Updating…” during backend run
-- Timestamp (muted)
+- `Updated HH:MM:SS` under summary (full timestamp in expanded footer)
 
 ### Full view
 
-- Summary inline message
+- Vertically stacked sections inside a `Flickable` (scroll when content exceeds widget size)
+- Summary line under the title (not `InlineMessage`, to avoid overlap with headings)
 - `nginx.service` status
 - Per-domain HTTP/HTTPS (OK label or status line)
 - Listen ports and backends
@@ -125,8 +127,16 @@ NGINX_SITES_ENABLED=./testdata/nginx-sites-enabled \
 After QML changes:
 
 ```bash
-kpackagetool6 --type Plasma/Applet --upgrade plasmoid
+./install.sh --plasmoid
 ```
+
+`git pull` alone does not update the installed widget. Plasma may keep old QML in memory until you reload:
+
+```bash
+systemctl --user restart plasma-plasmashell.service
+```
+
+Or remove and re-add the widget on the desktop.
 
 ## Development notes
 

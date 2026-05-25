@@ -1,9 +1,20 @@
 # Changelog
 
+## 1.2.5 — 2026-05-26
+
+### Fixed
+- Plasmoid: inline `compactRepresentation` / `fullRepresentation` (no overlapping root children)
+- Plasmoid: expanded view uses `Flickable` + `Column` with `contentHeight` (no `ScrollView` / invalid `ScrollBar` attachments)
+- Plasmoid: grey status dot while loading (not red before data arrives)
+- Plasmoid: compact timestamp under summary (`Updated HH:MM:SS`), not over the title
+
+### Changed
+- Docs: plasmoid install reload (`plasmashell` restart) and layout notes
+
 ## 1.2.4 — 2026-05-26
 
 ### Fixed
-- Plasmoid: expanded view uses `Flickable` instead of `ScrollView` (Plasma 6 applet loader)
+- Plasmoid: expanded view uses `Flickable` instead of `ScrollView` (Plasma 6 applet loader; superseded by 1.2.5 layout)
 
 ## 1.2.3 — 2026-05-26
 

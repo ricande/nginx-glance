@@ -3,6 +3,7 @@ import QtQuick.Layouts
 import QtCore
 import org.kde.plasma.plasmoid
 import org.kde.plasma.components as PC
+import org.kde.plasma.extras as PlasmaExtras
 import org.kde.plasma.plasma5support as P5S
 import org.kde.kirigami as Kirigami
 
@@ -27,6 +28,20 @@ PlasmoidItem {
     property bool scriptMissing: false
     property bool refreshRunning: false
 
+    readonly property bool hasData: root.statusData.summary !== undefined
+        && root.errorMessage.length === 0
+        && !root.scriptMissing
+    readonly property bool isBusy: root.refreshRunning
+        || (!root.hasData && !root.scriptMissing && root.errorMessage.length === 0)
+
+    function statusDotColor(): color {
+        if (root.scriptMissing || root.errorMessage.length > 0)
+            return Kirigami.Theme.negativeTextColor
+        if (root.isBusy)
+            return Kirigami.Theme.disabledTextColor
+        return boolColor(root.statusData.nginx && root.statusData.nginx.ok)
+    }
+
     function levelColor(level: string): color {
         switch (level) {
         case "ok": return Kirigami.Theme.positiveTextColor
@@ -37,6 +52,14 @@ PlasmoidItem {
 
     function boolColor(ok: bool): color {
         return ok ? Kirigami.Theme.positiveTextColor : Kirigami.Theme.negativeTextColor
+    }
+
+    function compactTimestampText(): string {
+        const ts = root.statusData.timestamp || ""
+        if (ts.length === 0)
+            return ""
+        const space = ts.indexOf(" ")
+        return space > 0 ? ts.substring(space + 1) : ts
     }
 
     function finishRefresh() {
@@ -122,12 +145,8 @@ PlasmoidItem {
         }
     }
 
-    compactRepresentation: compactView
-    fullRepresentation: fullView
-
-    // --- Compact: glanceable summary ---
-    Item {
-        id: compactView
+    // Inline assignments only — avoid duplicate root children that stack at (0,0).
+    compactRepresentation: Item {
         Layout.minimumWidth: Kirigami.Units.gridUnit * 12
         Layout.minimumHeight: Kirigami.Units.gridUnit * 10
 
@@ -144,14 +163,12 @@ PlasmoidItem {
                     width: Kirigami.Units.iconSizes.medium
                     height: width
                     radius: width / 2
-                    color: root.scriptMissing || root.errorMessage.length > 0
-                        ? Kirigami.Theme.negativeTextColor
-                        : boolColor(root.statusData.nginx && root.statusData.nginx.ok)
+                    color: root.statusDotColor()
                 }
 
                 ColumnLayout {
                     Layout.fillWidth: true
-                    spacing: 2
+                    spacing: Kirigami.Units.smallSpacing
 
                     PC.Label {
                         text: "Nginx Glance"
@@ -170,225 +187,276 @@ PlasmoidItem {
                     }
 
                     PC.Label {
-                        visible: !root.scriptMissing && root.errorMessage.length === 0
-                        text: root.refreshRunning
-                            ? qsTr("Updating…")
-                            : (root.statusData.summary
-                                ? qsTr("Domains %1/%2 · Ports %3 · Backends %4")
-                                    .arg(root.statusData.summary.domains_healthy)
-                                    .arg(root.statusData.summary.domains_total)
-                                    .arg(root.statusData.summary.ports_listening)
-                                    .arg(root.statusData.summary.backends_ok)
-                                : qsTr("Loading…"))
+                        visible: root.isBusy && root.errorMessage.length === 0 && !root.scriptMissing
+                        text: qsTr("Loading…")
                         Layout.fillWidth: true
                         elide: Text.ElideRight
                         font.pointSize: Kirigami.Theme.smallFont.pointSize
-                        opacity: root.refreshRunning ? 0.85 : 1
+                        opacity: 0.85
+                        color: Kirigami.Theme.disabledTextColor
+                    }
+
+                    PC.Label {
+                        visible: root.hasData
+                        text: qsTr("Domains %1/%2 · Ports %3 · Backends %4")
+                            .arg(root.statusData.summary.domains_healthy)
+                            .arg(root.statusData.summary.domains_total)
+                            .arg(root.statusData.summary.ports_listening)
+                            .arg(root.statusData.summary.backends_ok)
+                        Layout.fillWidth: true
+                        elide: Text.ElideRight
+                        font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    }
+
+                    PC.Label {
+                        visible: root.hasData && root.statusData.timestamp
+                        text: qsTr("Updated %1").arg(root.compactTimestampText())
+                        Layout.fillWidth: true
+                        elide: Text.ElideRight
+                        opacity: 0.65
+                        font.pointSize: Kirigami.Theme.smallFont.pointSize
+                        color: Kirigami.Theme.disabledTextColor
                     }
                 }
-            }
-
-            PC.Label {
-                visible: root.statusData.timestamp && !root.scriptMissing
-                text: root.statusData.timestamp || ""
-                opacity: 0.65
-                Layout.fillWidth: true
-                elide: Text.ElideRight
-                font.pointSize: Kirigami.Theme.smallFont.pointSize
             }
         }
     }
 
-    // --- Expanded: structured details (not raw logs) ---
-    // Flickable: QtQuick core type (Plasma 6 plasmoids do not load QQC2.ScrollView)
-    Flickable {
-        id: fullView
-        Layout.fillWidth: true
-        Layout.fillHeight: true
+    fullRepresentation: PlasmaExtras.Representation {
         Layout.minimumWidth: Kirigami.Units.gridUnit * 22
         Layout.minimumHeight: Kirigami.Units.gridUnit * 18
-        clip: true
-        contentWidth: width
-        contentHeight: fullContent.implicitHeight
-        boundsBehavior: Flickable.StopAtBounds
+        collapseMarginsHint: true
 
-        ColumnLayout {
-            id: fullContent
-            width: fullView.width
-            spacing: Kirigami.Units.mediumSpacing
+        Flickable {
+            id: detailsFlickable
+            anchors.fill: parent
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            contentWidth: width
+            contentHeight: detailsColumn.height
 
-            RowLayout {
-                Layout.fillWidth: true
-                Rectangle {
-                    width: Kirigami.Units.iconSizes.smallMedium
-                    height: width
-                    radius: width / 2
-                    color: root.scriptMissing || root.errorMessage.length > 0
-                        ? Kirigami.Theme.negativeTextColor
-                        : boolColor(root.statusData.nginx && root.statusData.nginx.ok)
+            Column {
+                id: detailsColumn
+                width: detailsFlickable.width
+                spacing: Kirigami.Units.mediumSpacing
+                topPadding: Kirigami.Units.smallSpacing
+                bottomPadding: Kirigami.Units.smallSpacing
+
+                Row {
+                    width: parent.width
+                    spacing: Kirigami.Units.smallSpacing
+                    Rectangle {
+                        width: Kirigami.Units.iconSizes.smallMedium
+                        height: width
+                        radius: width / 2
+                        color: root.statusDotColor()
+                    }
+                    Kirigami.Heading {
+                        level: 2
+                        text: "Nginx Glance"
+                        width: parent.width - Kirigami.Units.iconSizes.smallMedium - parent.spacing
+                    }
                 }
-                Kirigami.Heading {
-                    level: 2
-                    text: "Nginx Glance"
-                    Layout.fillWidth: true
-                }
+
                 PC.Label {
-                    visible: root.refreshRunning
-                    text: qsTr("Updating…")
-                    opacity: 0.7
+                    width: parent.width
+                    visible: root.isBusy && !root.scriptMissing && root.errorMessage.length === 0
+                    text: qsTr("Loading status…")
+                    opacity: 0.85
+                    color: Kirigami.Theme.disabledTextColor
                     font.pointSize: Kirigami.Theme.smallFont.pointSize
                 }
-            }
 
-            PC.Label {
-                visible: root.scriptMissing || root.errorMessage.length > 0
-                text: root.scriptMissing
-                    ? qsTr("Cannot find backend. From the project folder run: ./install.sh")
-                    : root.errorMessage
-                wrapMode: Text.WordWrap
-                Layout.fillWidth: true
-                color: Kirigami.Theme.negativeTextColor
-            }
+                PC.Label {
+                    width: parent.width
+                    visible: root.scriptMissing || root.errorMessage.length > 0
+                    text: root.scriptMissing
+                        ? qsTr("Cannot find backend. From the project folder run: ./install.sh")
+                        : root.errorMessage
+                    wrapMode: Text.WordWrap
+                    color: Kirigami.Theme.negativeTextColor
+                }
 
-            Kirigami.InlineMessage {
-                Layout.fillWidth: true
-                visible: root.statusData.summary && !root.scriptMissing && root.errorMessage.length === 0
-                text: root.statusData.summary
-                    ? qsTr("%1 of %2 domains healthy · %3 ports up · %4 backends up")
+                PC.Label {
+                    width: parent.width
+                    visible: root.hasData
+                    text: qsTr("%1 of %2 domains healthy · %3 ports up · %4 backends up")
                         .arg(root.statusData.summary.domains_healthy)
                         .arg(root.statusData.summary.domains_total)
                         .arg(root.statusData.summary.ports_listening)
                         .arg(root.statusData.summary.backends_ok)
-                    : ""
-            }
+                    wrapMode: Text.WordWrap
+                    opacity: 0.9
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                }
 
-            RowLayout {
-                visible: !root.scriptMissing && root.errorMessage.length === 0
-                Layout.fillWidth: true
-                PC.Label { text: qsTr("nginx.service"); Layout.fillWidth: true }
+                Item {
+                    width: parent.width
+                    height: nginxRow.implicitHeight
+                    visible: root.hasData
+                    RowLayout {
+                        id: nginxRow
+                        anchors.fill: parent
+                        PC.Label { text: qsTr("nginx.service"); Layout.fillWidth: true }
+                        PC.Label {
+                            text: root.statusData.nginx ? root.statusData.nginx.status : "—"
+                            color: boolColor(root.statusData.nginx && root.statusData.nginx.ok)
+                            font.bold: true
+                        }
+                    }
+                }
+
+                Kirigami.Separator {
+                    width: parent.width
+                    visible: root.hasData
+                }
+
+                Kirigami.Heading {
+                    level: 3
+                    width: parent.width
+                    text: qsTr("Domains")
+                    visible: root.hasData
+                }
+
+                Repeater {
+                    model: root.hasData ? (root.statusData.domains || []) : []
+                    delegate: Item {
+                        required property var modelData
+                        width: detailsColumn.width
+                        height: domainBlock.implicitHeight
+
+                        ColumnLayout {
+                            id: domainBlock
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            spacing: Kirigami.Units.smallSpacing
+
+                            PC.Label {
+                                text: modelData.name
+                                font.bold: true
+                                Layout.fillWidth: true
+                            }
+                            RowLayout {
+                                Layout.fillWidth: true
+                                PC.Label {
+                                    text: "HTTP"
+                                    Layout.preferredWidth: Kirigami.Units.gridUnit * 5
+                                    opacity: 0.8
+                                }
+                                PC.Label {
+                                    text: modelData.http.level === "ok"
+                                        ? qsTr("OK")
+                                        : (modelData.http.line || modelData.http.level)
+                                    color: levelColor(modelData.http.level)
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
+                                }
+                            }
+                            RowLayout {
+                                Layout.fillWidth: true
+                                PC.Label {
+                                    text: "HTTPS"
+                                    Layout.preferredWidth: Kirigami.Units.gridUnit * 5
+                                    opacity: 0.8
+                                }
+                                PC.Label {
+                                    text: modelData.https.level === "ok"
+                                        ? qsTr("OK")
+                                        : (modelData.https.line || modelData.https.level)
+                                    color: levelColor(modelData.https.level)
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
+                                }
+                            }
+                            Kirigami.Separator { Layout.fillWidth: true }
+                        }
+                    }
+                }
+
+                Kirigami.Heading {
+                    level: 3
+                    width: parent.width
+                    text: qsTr("Ports")
+                    visible: root.hasData && (root.statusData.ports || []).length > 0
+                }
+
+                Repeater {
+                    model: root.hasData ? (root.statusData.ports || []) : []
+                    delegate: Item {
+                        required property var modelData
+                        width: detailsColumn.width
+                        height: portRow.implicitHeight
+                        visible: height > 0
+
+                        RowLayout {
+                            id: portRow
+                            anchors.fill: parent
+                            PC.Label {
+                                text: qsTr("port %1").arg(modelData.port)
+                                Layout.fillWidth: true
+                            }
+                            PC.Label {
+                                text: modelData.listening ? qsTr("listening") : qsTr("not listening")
+                                color: boolColor(modelData.listening)
+                            }
+                        }
+                    }
+                }
+
+                Kirigami.Heading {
+                    level: 3
+                    width: parent.width
+                    text: qsTr("Backends")
+                    visible: root.hasData && (root.statusData.backends || []).length > 0
+                }
+
+                Repeater {
+                    model: root.hasData ? (root.statusData.backends || []) : []
+                    delegate: Item {
+                        required property var modelData
+                        width: detailsColumn.width
+                        height: backendRow.implicitHeight
+
+                        RowLayout {
+                            id: backendRow
+                            anchors.fill: parent
+                            PC.Label {
+                                text: modelData.target
+                                Layout.fillWidth: true
+                                elide: Text.ElideRight
+                            }
+                            PC.Label {
+                                text: modelData.listening ? qsTr("up") : qsTr("down")
+                                color: boolColor(modelData.listening)
+                            }
+                        }
+                    }
+                }
+
+                Kirigami.Separator {
+                    width: parent.width
+                    visible: root.hasData
+                }
+
                 PC.Label {
-                    text: root.statusData.nginx ? root.statusData.nginx.status : "—"
-                    color: boolColor(root.statusData.nginx && root.statusData.nginx.ok)
-                    font.bold: true
-                }
-            }
-
-            Kirigami.Separator { Layout.fillWidth: true }
-
-            Kirigami.Heading {
-                level: 3
-                text: qsTr("Domains")
-            }
-
-            Repeater {
-                model: root.statusData.domains || []
-                delegate: ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: Kirigami.Units.smallSpacing
-
-                    PC.Label {
-                        text: modelData.name
-                        font.bold: true
-                    }
-                    RowLayout {
-                        Layout.fillWidth: true
-                        PC.Label {
-                            text: "HTTP"
-                            Layout.preferredWidth: Kirigami.Units.gridUnit * 5
-                            opacity: 0.8
-                        }
-                        PC.Label {
-                            text: modelData.http.level === "ok"
-                                ? qsTr("OK")
-                                : (modelData.http.line || modelData.http.level)
-                            color: levelColor(modelData.http.level)
-                            Layout.fillWidth: true
-                            elide: Text.ElideRight
-                        }
-                    }
-                    RowLayout {
-                        Layout.fillWidth: true
-                        PC.Label {
-                            text: "HTTPS"
-                            Layout.preferredWidth: Kirigami.Units.gridUnit * 5
-                            opacity: 0.8
-                        }
-                        PC.Label {
-                            text: modelData.https.level === "ok"
-                                ? qsTr("OK")
-                                : (modelData.https.line || modelData.https.level)
-                            color: levelColor(modelData.https.level)
-                            Layout.fillWidth: true
-                            elide: Text.ElideRight
-                        }
-                    }
-                    Kirigami.Separator { Layout.fillWidth: true }
-                }
-            }
-
-            Kirigami.Heading {
-                level: 3
-                text: qsTr("Ports")
-                visible: (root.statusData.ports || []).length > 0
-            }
-
-            Repeater {
-                model: root.statusData.ports || []
-                delegate: RowLayout {
-                    Layout.fillWidth: true
-                    PC.Label {
-                        text: qsTr("port %1").arg(modelData.port)
-                        Layout.fillWidth: true
-                    }
-                    PC.Label {
-                        text: modelData.listening ? qsTr("listening") : qsTr("not listening")
-                        color: boolColor(modelData.listening)
-                    }
-                }
-            }
-
-            Kirigami.Heading {
-                level: 3
-                text: qsTr("Backends")
-                visible: (root.statusData.backends || []).length > 0
-            }
-
-            Repeater {
-                model: root.statusData.backends || []
-                delegate: RowLayout {
-                    Layout.fillWidth: true
-                    PC.Label {
-                        text: modelData.target
-                        Layout.fillWidth: true
-                        elide: Text.ElideRight
-                    }
-                    PC.Label {
-                        text: modelData.listening ? qsTr("up") : qsTr("down")
-                        color: boolColor(modelData.listening)
-                    }
-                }
-            }
-
-            Kirigami.Separator { Layout.fillWidth: true }
-
-            PC.Label {
-                text: root.statusData.system
-                    ? qsTr("CPU %1 · %2 · Disk %3")
+                    width: parent.width
+                    visible: root.hasData && root.statusData.system
+                    text: qsTr("CPU %1 · %2 · Disk %3")
                         .arg(root.statusData.system.cpu_load)
                         .arg(root.statusData.system.memory)
                         .arg(root.statusData.system.disk_root)
-                    : ""
-                wrapMode: Text.WordWrap
-                Layout.fillWidth: true
-                opacity: 0.85
-                font.pointSize: Kirigami.Theme.smallFont.pointSize
-            }
+                    wrapMode: Text.WordWrap
+                    opacity: 0.85
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                }
 
-            PC.Label {
-                text: (root.statusData.host || "") + " · " + (root.statusData.timestamp || "")
-                opacity: 0.65
-                Layout.fillWidth: true
-                font.pointSize: Kirigami.Theme.smallFont.pointSize
+                PC.Label {
+                    width: parent.width
+                    visible: root.hasData
+                    text: (root.statusData.host || "") + " · " + (root.statusData.timestamp || "")
+                    opacity: 0.65
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                }
             }
         }
     }
