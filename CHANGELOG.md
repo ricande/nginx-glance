@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.0 — 2026-05-25
+
+### Added
+- **`docs/`** — architecture, backend, parsing, plasmoid, install guides
+- **ADRs 0001–0007** — recorded design decisions under `docs/adr/`
+- ADR template for future decisions
+
+### Changed
+- README links to `docs/` (detailed content moved out of root README)
+
 ## 1.1.0 — 2026-05-25
 
 ### Added
