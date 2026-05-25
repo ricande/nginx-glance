@@ -73,19 +73,22 @@ Tune backend speed with `NGINX_GLANCE_CURL_TIMEOUT` (see [backend.md](backend.md
 Uses `org.kde.plasma.plasma5support` **executable** engine:
 
 ```qml
-readonly property string commandSource: HOME + "/bin/nginx-glance.sh --json"
+import QtCore
 
-P5S.DataSource {
-    engine: "executable"
-    connectedSources: []
-    // connectSource(commandSource) — one string for connect and disconnect
-    // sourceName in onNewData === commandSource
-}
+readonly property string homePath: StandardPaths.writableLocation(StandardPaths.HomeLocation)
+    // with file:// stripped; falls back to Qt.environment.HOME if needed
+readonly property string commandSource: homePath + "/bin/nginx-glance.sh --json"
 ```
+
+`Qt.environment.HOME` alone is **not** relied on in Plasma 6 QML — use `StandardPaths.HomeLocation` first.
 
 `disconnectSource()` and `onNewData` `sourceName` comparisons use the **same** `commandSource` string.
 
-If exit code `127` or failure with empty stdout → install hint (`./install.sh`).
+| Exit code | UI message |
+|-----------|------------|
+| `127` | Script not found → run `./install.sh` |
+| Other non-zero | Backend failure (exit code shown) |
+| `0` | Parse JSON and update views |
 
 ## Installation
 

@@ -123,6 +123,7 @@ nginx-glance.sh [--text|--json|--help]
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `NGINX_SITES_ENABLED` | `/etc/nginx/sites-enabled` | nginx site config directory |
+| `NGINX_GLANCE_CURL_TIMEOUT` | `2` | Per-request curl timeout in seconds (1–30) |
 
 ### Examples
 

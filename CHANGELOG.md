@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.2 — 2026-05-26
+
+### Fixed
+- Plasmoid: exit `127` only shows install hint; other non-zero exits show backend failure
+- Plasmoid: resolve home via `StandardPaths.HomeLocation` (Plasma 6), not only `Qt.environment.HOME`
+- README: `NGINX_GLANCE_CURL_TIMEOUT` in Environment table
+
 ## 1.2.1 — 2026-05-25
 
 ### Changed

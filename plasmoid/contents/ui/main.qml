@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls as QQC2
+import QtCore
 import org.kde.plasma.plasmoid
 import org.kde.plasma.components as PC
 import org.kde.plasma.plasma5support as P5S
@@ -9,7 +10,17 @@ import org.kde.kirigami as Kirigami
 PlasmoidItem {
     id: root
 
-    readonly property string commandSource: Qt.environment.HOME + "/bin/nginx-glance.sh --json"
+    // Home: StandardPaths is reliable on Plasma 6; Qt.environment.HOME is fallback only.
+    readonly property string homePath: {
+        const homeUrl = StandardPaths.writableLocation(StandardPaths.HomeLocation)
+        if (homeUrl) {
+            const path = homeUrl.toString().replace(/^file:\/\//, "")
+            if (path.length > 0)
+                return path
+        }
+        return Qt.environment.HOME || ""
+    }
+    readonly property string commandSource: homePath + "/bin/nginx-glance.sh --json"
     readonly property int refreshMs: 30000
 
     property var statusData: ({})
@@ -57,20 +68,34 @@ PlasmoidItem {
     }
 
     function handleBackendResult(exitCode: int, stdout: string) {
-        if (exitCode === 127 || (exitCode !== 0 && stdout.length === 0)) {
+        root.scriptMissing = false
+
+        if (root.homePath.length === 0) {
+            root.scriptMissing = true
+            root.errorMessage = qsTr("Cannot resolve home directory for nginx-glance.sh.")
+            return
+        }
+
+        if (exitCode === 127) {
             root.scriptMissing = true
             root.errorMessage = qsTr("Script not found. Run: ./install.sh from the project folder.")
             return
         }
-        if (exitCode !== 0 && stdout.length === 0) {
+
+        if (exitCode !== 0) {
             root.errorMessage = qsTr("nginx-glance.sh failed (exit %1)").arg(exitCode)
             return
         }
-        root.scriptMissing = false
+
         root.parseStdout(stdout)
     }
 
-    Component.onCompleted: refreshStatus()
+    Component.onCompleted: {
+        if (root.homePath.length > 0)
+            refreshStatus()
+        else
+            handleBackendResult(127, "")
+    }
 
     Timer {
         interval: root.refreshMs
