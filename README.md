@@ -143,11 +143,18 @@ bash -n nginx-glance.sh
 bash -n install.sh
 ./nginx-glance.sh --text
 NGINX_SITES_ENABLED=./testdata/nginx-sites-enabled ./nginx-glance.sh --json
+
+# Fast JSON check (1s curl timeout per request)
+NGINX_GLANCE_CURL_TIMEOUT=1 \
+NGINX_SITES_ENABLED=./testdata/nginx-sites-enabled \
+./nginx-glance.sh --json | python3 -m json.tool
+
 ./install.sh
 ./install.sh --plasmoid
-kpackagetool6 --type Plasma/Applet --install plasmoid
 kpackagetool6 --type Plasma/Applet --upgrade plasmoid
 ```
+
+Widget polls every **30s**; backend runtime depends on domain count and `NGINX_GLANCE_CURL_TIMEOUT` — see [docs/backend.md](docs/backend.md) and [docs/plasmoid.md](docs/plasmoid.md).
 
 ---
 

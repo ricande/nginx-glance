@@ -4,7 +4,16 @@ set -u
 
 NGINX_SITES_ENABLED="${NGINX_SITES_ENABLED:-/etc/nginx/sites-enabled}"
 OUTPUT_MODE="text"
-CURL_TIMEOUT=5
+CURL_TIMEOUT=2
+
+init_curl_timeout() {
+  local raw="${NGINX_GLANCE_CURL_TIMEOUT:-2}"
+  if [[ "$raw" =~ ^[0-9]+$ ]] && [ "$raw" -ge 1 ] && [ "$raw" -le 30 ]; then
+    CURL_TIMEOUT="$raw"
+  else
+    CURL_TIMEOUT=2
+  fi
+}
 
 # Collected check results (parallel arrays via newline-delimited stores)
 DOMAINS=""
@@ -39,8 +48,9 @@ Options:
   --help   Show this help
 
 Environment:
-  NGINX_SITES_ENABLED   Path to nginx sites-enabled directory
-                        (default: /etc/nginx/sites-enabled)
+  NGINX_SITES_ENABLED        Path to nginx sites-enabled directory
+                             (default: /etc/nginx/sites-enabled)
+  NGINX_GLANCE_CURL_TIMEOUT  Per-request curl timeout in seconds (1–30, default: 2)
 
 Examples:
   nginx-glance.sh
@@ -212,7 +222,10 @@ url_level_from_line() {
 
 check_url_line() {
   local url="$1"
-  curl -sI --max-time "$CURL_TIMEOUT" "$url" 2>/dev/null | tr -d '\r' | head -1 || true
+  curl -sI \
+    --connect-timeout "$CURL_TIMEOUT" \
+    --max-time "$CURL_TIMEOUT" \
+    "$url" 2>/dev/null | tr -d '\r' | head -1 || true
 }
 
 check_port_listening() {
@@ -492,6 +505,7 @@ main() {
     echo "nginx-glance: directory not found: $NGINX_SITES_ENABLED" >&2
     exit 1
   fi
+  init_curl_timeout
   run_checks
   case "$OUTPUT_MODE" in
     text) emit_text ;;

@@ -18,6 +18,15 @@ nginx-glance.sh [--text|--json|--help]
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `NGINX_SITES_ENABLED` | `/etc/nginx/sites-enabled` | Directory of enabled site config files |
+| `NGINX_GLANCE_CURL_TIMEOUT` | `2` | Per-request curl timeout in seconds (integer **1–30**) |
+
+Invalid or out-of-range `NGINX_GLANCE_CURL_TIMEOUT` values fall back to **2**.
+
+Each HTTP probe uses:
+
+```bash
+curl -sI --connect-timeout "$CURL_TIMEOUT" --max-time "$CURL_TIMEOUT" "$url"
+```
 
 Exit codes:
 
@@ -30,6 +39,24 @@ Exit codes:
 1. **Discover** — domains, listen ports, proxy backends from config files
 2. **Check** — nginx service, URLs, ports, system stats
 3. **Emit** — format results as text or JSON
+
+## Refresh latency (runtime)
+
+Domain checks run **sequentially**. Worst-case HTTP phase duration is roughly:
+
+```
+domains × 2 protocols × NGINX_GLANCE_CURL_TIMEOUT
+```
+
+Example: 5 domains, timeout 2s → up to ~20s spent in curl alone (plus `ss`, `systemctl`, parsing).
+
+The Plasma widget **polls every 30 seconds**, but **fresh data appears only after the backend finishes**. If a run is still in progress, the widget skips starting another until the current run completes (see [plasmoid.md](plasmoid.md)).
+
+Lower timeout for snappier local panels:
+
+```bash
+NGINX_GLANCE_CURL_TIMEOUT=1 ~/bin/nginx-glance.sh --json
+```
 
 ## Text output sections
 
@@ -81,7 +108,7 @@ Top-level fields:
 
 `level`: `ok` | `warn` | `error`
 
-- **ok** — empty line missing; status matches 2xx/3xx
+- **ok** — response line present and status matches 2xx/3xx
 - **warn** — response line present but not 2xx/3xx
 - **error** — no response line
 
@@ -98,13 +125,21 @@ Top-level fields:
 
 Checked at install time — see [install-and-dependencies.md](install-and-dependencies.md).
 
+## Fast local testing
+
+Parsing and JSON shape without real DNS (curl may fail quickly on fake domains):
+
+```bash
+NGINX_GLANCE_CURL_TIMEOUT=1 \
+NGINX_SITES_ENABLED=./testdata/nginx-sites-enabled \
+./nginx-glance.sh --json | python3 -m json.tool
+```
+
 ## Testing without system nginx
 
 ```bash
 NGINX_SITES_ENABLED=./testdata/nginx-sites-enabled ./nginx-glance.sh --json
 ```
-
-curl may fail for fake domains; parsing and port/backend discovery still validate.
 
 ## Related ADRs
 

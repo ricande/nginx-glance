@@ -9,12 +9,13 @@ import org.kde.kirigami as Kirigami
 PlasmoidItem {
     id: root
 
-    readonly property string scriptPath: Qt.environment.HOME + "/bin/nginx-glance.sh"
+    readonly property string commandSource: Qt.environment.HOME + "/bin/nginx-glance.sh --json"
     readonly property int refreshMs: 30000
 
     property var statusData: ({})
     property string errorMessage: ""
     property bool scriptMissing: false
+    property bool refreshRunning: false
 
     function levelColor(level: string): color {
         switch (level) {
@@ -28,10 +29,17 @@ PlasmoidItem {
         return ok ? Kirigami.Theme.positiveTextColor : Kirigami.Theme.negativeTextColor
     }
 
+    function finishRefresh() {
+        root.refreshRunning = false
+    }
+
     function refreshStatus() {
-        if (execSource.data[root.scriptPath] !== undefined)
-            execSource.disconnectSource(root.scriptPath)
-        execSource.connectSource(root.scriptPath, ["--json"])
+        if (root.refreshRunning)
+            return
+        if (execSource.data[root.commandSource] !== undefined)
+            execSource.disconnectSource(root.commandSource)
+        root.refreshRunning = true
+        execSource.connectSource(root.commandSource)
     }
 
     function parseStdout(stdout: string) {
@@ -48,6 +56,20 @@ PlasmoidItem {
         }
     }
 
+    function handleBackendResult(exitCode: int, stdout: string) {
+        if (exitCode === 127 || (exitCode !== 0 && stdout.length === 0)) {
+            root.scriptMissing = true
+            root.errorMessage = qsTr("Script not found. Run: ./install.sh from the project folder.")
+            return
+        }
+        if (exitCode !== 0 && stdout.length === 0) {
+            root.errorMessage = qsTr("nginx-glance.sh failed (exit %1)").arg(exitCode)
+            return
+        }
+        root.scriptMissing = false
+        root.parseStdout(stdout)
+    }
+
     Component.onCompleted: refreshStatus()
 
     Timer {
@@ -55,35 +77,31 @@ PlasmoidItem {
         running: !root.scriptMissing
         repeat: true
         triggeredOnStart: false
-        onTriggered: root.refreshStatus()
+        onTriggered: {
+            if (!root.refreshRunning)
+                root.refreshStatus()
+        }
     }
 
     P5S.DataSource {
         id: execSource
         engine: "executable"
+        connectedSources: []
+
         onNewData: function(sourceName, data) {
-            if (sourceName !== root.scriptPath)
+            if (sourceName !== root.commandSource)
                 return
             const exitCode = data["exit code"]
             const stdout = data["stdout"] || ""
-            if (exitCode === 127 || (exitCode !== 0 && stdout.length === 0)) {
-                root.scriptMissing = true
-                root.errorMessage = qsTr("Script not found. Run: ./install.sh from the project folder.")
-                return
-            }
-            if (exitCode !== 0 && stdout.length === 0) {
-                root.errorMessage = qsTr("nginx-glance.sh failed (exit %1)").arg(exitCode)
-                return
-            }
-            root.scriptMissing = false
-            root.parseStdout(stdout)
+            root.handleBackendResult(exitCode, stdout)
+            root.finishRefresh()
         }
     }
 
     compactRepresentation: compactView
     fullRepresentation: fullView
 
-    // --- Compact panel ---
+    // --- Compact: glanceable summary ---
     Item {
         id: compactView
         Layout.minimumWidth: Kirigami.Units.gridUnit * 12
@@ -96,49 +114,60 @@ PlasmoidItem {
 
             RowLayout {
                 Layout.fillWidth: true
-                PC.Label {
-                    text: "Nginx Glance"
-                    font.bold: true
-                    Layout.fillWidth: true
-                    elide: Text.ElideRight
-                }
+                spacing: Kirigami.Units.smallSpacing
+
                 Rectangle {
-                    width: Kirigami.Units.iconSizes.smallMedium
+                    width: Kirigami.Units.iconSizes.medium
                     height: width
                     radius: width / 2
                     color: root.scriptMissing || root.errorMessage.length > 0
                         ? Kirigami.Theme.negativeTextColor
                         : boolColor(root.statusData.nginx && root.statusData.nginx.ok)
                 }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+
+                    PC.Label {
+                        text: "Nginx Glance"
+                        font.bold: true
+                        Layout.fillWidth: true
+                        elide: Text.ElideRight
+                    }
+
+                    PC.Label {
+                        visible: root.scriptMissing || root.errorMessage.length > 0
+                        text: root.scriptMissing ? qsTr("Install: ./install.sh") : root.errorMessage
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                        color: Kirigami.Theme.negativeTextColor
+                        font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    }
+
+                    PC.Label {
+                        visible: !root.scriptMissing && root.errorMessage.length === 0
+                        text: root.refreshRunning
+                            ? qsTr("Updating…")
+                            : (root.statusData.summary
+                                ? qsTr("Domains %1/%2 · Ports %3 · Backends %4")
+                                    .arg(root.statusData.summary.domains_healthy)
+                                    .arg(root.statusData.summary.domains_total)
+                                    .arg(root.statusData.summary.ports_listening)
+                                    .arg(root.statusData.summary.backends_ok)
+                                : qsTr("Loading…"))
+                        Layout.fillWidth: true
+                        elide: Text.ElideRight
+                        font.pointSize: Kirigami.Theme.smallFont.pointSize
+                        opacity: root.refreshRunning ? 0.85 : 1
+                    }
+                }
             }
 
             PC.Label {
-                visible: root.scriptMissing || root.errorMessage.length > 0
-                text: root.scriptMissing ? qsTr("Install: ./install.sh") : root.errorMessage
-                wrapMode: Text.WordWrap
-                Layout.fillWidth: true
-                color: Kirigami.Theme.negativeTextColor
-                font.pointSize: Kirigami.Theme.smallFont.pointSize
-            }
-
-            PC.Label {
-                visible: !root.scriptMissing && root.errorMessage.length === 0
-                text: root.statusData.summary
-                    ? qsTr("Domains %1/%2 · Ports %3 · Backends %4")
-                        .arg(root.statusData.summary.domains_healthy)
-                        .arg(root.statusData.summary.domains_total)
-                        .arg(root.statusData.summary.ports_listening)
-                        .arg(root.statusData.summary.backends_ok)
-                    : qsTr("Loading…")
-                Layout.fillWidth: true
-                elide: Text.ElideRight
-                font.pointSize: Kirigami.Theme.smallFont.pointSize
-            }
-
-            PC.Label {
-                visible: root.statusData.timestamp
+                visible: root.statusData.timestamp && !root.scriptMissing
                 text: root.statusData.timestamp || ""
-                opacity: 0.75
+                opacity: 0.65
                 Layout.fillWidth: true
                 elide: Text.ElideRight
                 font.pointSize: Kirigami.Theme.smallFont.pointSize
@@ -146,7 +175,7 @@ PlasmoidItem {
         }
     }
 
-    // --- Expanded view ---
+    // --- Expanded: structured details (not raw logs) ---
     ScrollView {
         id: fullView
         Layout.fillWidth: true
@@ -159,19 +188,49 @@ PlasmoidItem {
             width: fullView.availableWidth
             spacing: Kirigami.Units.mediumSpacing
 
-            Kirigami.Heading {
-                level: 2
-                text: "Nginx Glance"
+            RowLayout {
+                Layout.fillWidth: true
+                Rectangle {
+                    width: Kirigami.Units.iconSizes.smallMedium
+                    height: width
+                    radius: width / 2
+                    color: root.scriptMissing || root.errorMessage.length > 0
+                        ? Kirigami.Theme.negativeTextColor
+                        : boolColor(root.statusData.nginx && root.statusData.nginx.ok)
+                }
+                Kirigami.Heading {
+                    level: 2
+                    text: "Nginx Glance"
+                    Layout.fillWidth: true
+                }
+                PC.Label {
+                    visible: root.refreshRunning
+                    text: qsTr("Updating…")
+                    opacity: 0.7
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                }
             }
 
             PC.Label {
                 visible: root.scriptMissing || root.errorMessage.length > 0
                 text: root.scriptMissing
-                    ? qsTr("Cannot find %1. From the project folder run: ./install.sh").arg(root.scriptPath)
+                    ? qsTr("Cannot find backend. From the project folder run: ./install.sh")
                     : root.errorMessage
                 wrapMode: Text.WordWrap
                 Layout.fillWidth: true
                 color: Kirigami.Theme.negativeTextColor
+            }
+
+            Kirigami.InlineMessage {
+                Layout.fillWidth: true
+                visible: root.statusData.summary && !root.scriptMissing && root.errorMessage.length === 0
+                text: root.statusData.summary
+                    ? qsTr("%1 of %2 domains healthy · %3 ports up · %4 backends up")
+                        .arg(root.statusData.summary.domains_healthy)
+                        .arg(root.statusData.summary.domains_total)
+                        .arg(root.statusData.summary.ports_listening)
+                        .arg(root.statusData.summary.backends_ok)
+                    : ""
             }
 
             RowLayout {
@@ -181,6 +240,7 @@ PlasmoidItem {
                 PC.Label {
                     text: root.statusData.nginx ? root.statusData.nginx.status : "—"
                     color: boolColor(root.statusData.nginx && root.statusData.nginx.ok)
+                    font.bold: true
                 }
             }
 
@@ -195,31 +255,42 @@ PlasmoidItem {
                 model: root.statusData.domains || []
                 delegate: ColumnLayout {
                     Layout.fillWidth: true
-                    spacing: 2
+                    spacing: Kirigami.Units.smallSpacing
+
                     PC.Label {
                         text: modelData.name
                         font.bold: true
                     }
                     RowLayout {
                         Layout.fillWidth: true
-                        PC.Label { text: "HTTP"; Layout.preferredWidth: Kirigami.Units.gridUnit * 4 }
                         PC.Label {
-                            text: modelData.http.line || modelData.http.level
+                            text: "HTTP"
+                            Layout.preferredWidth: Kirigami.Units.gridUnit * 5
+                            opacity: 0.8
+                        }
+                        PC.Label {
+                            text: modelData.http.level === "ok"
+                                ? qsTr("OK")
+                                : (modelData.http.line || modelData.http.level)
                             color: levelColor(modelData.http.level)
                             Layout.fillWidth: true
                             elide: Text.ElideRight
-                            font.pointSize: Kirigami.Theme.smallFont.pointSize
                         }
                     }
                     RowLayout {
                         Layout.fillWidth: true
-                        PC.Label { text: "HTTPS"; Layout.preferredWidth: Kirigami.Units.gridUnit * 4 }
                         PC.Label {
-                            text: modelData.https.line || modelData.https.level
+                            text: "HTTPS"
+                            Layout.preferredWidth: Kirigami.Units.gridUnit * 5
+                            opacity: 0.8
+                        }
+                        PC.Label {
+                            text: modelData.https.level === "ok"
+                                ? qsTr("OK")
+                                : (modelData.https.line || modelData.https.level)
                             color: levelColor(modelData.https.level)
                             Layout.fillWidth: true
                             elide: Text.ElideRight
-                            font.pointSize: Kirigami.Theme.smallFont.pointSize
                         }
                     }
                     Kirigami.Separator { Layout.fillWidth: true }

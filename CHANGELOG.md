@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.1 — 2026-05-25
+
+### Changed
+- Plasmoid: single `commandSource` string for executable DataSource; `refreshRunning` prevents overlapping runs
+- Plasmoid UI polish: glanceable compact layout; expanded view less log-like
+- `NGINX_GLANCE_CURL_TIMEOUT` (default 2s, range 1–30); curl uses `--connect-timeout` and `--max-time`
+- Docs: refresh latency, fast test command, Plasma 6 metadata note
+- Removed `X-Plasma-MainScript` from `metadata.json` (Plasma 6 uses `contents/ui/main.qml`)
+
 ## 1.2.0 — 2026-05-25
 
 ### Added

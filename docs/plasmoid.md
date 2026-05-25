@@ -5,7 +5,7 @@
 ```
 plasmoid/
 ├── metadata.json          # KPlugin id, Plasma 6 API version
-└── contents/ui/main.qml   # Widget UI
+└── contents/ui/main.qml   # Widget entry (Plasma 6 default path)
 ```
 
 | Field | Value |
@@ -13,29 +13,40 @@ plasmoid/
 | **Plugin Id** | `org.nginxglance.nginxglance` |
 | **Name** | Nginx Glance |
 | **Minimum Plasma** | 6.0 |
-| **Main script** | `ui/main.qml` |
+| **Entry QML** | `contents/ui/main.qml` (no `X-Plasma-MainScript` — Plasma 6 resolves this automatically) |
+
+## UI design goals
+
+The widget should feel **glanceable, calm, compact, and readable** on a desktop or panel:
+
+- **Compact view** — one clear status dot and a short summary line (domains, ports, backends); timestamp subdued; “Updating…” while a run is in flight
+- **Expanded view** — structured sections (nginx, domains, ports, backends, system), not a raw log dump; OK shown simply, problems show status text
+- **No health logic in QML** — colors and counts come from backend JSON only
 
 ## Runtime behavior
 
-1. On load, runs executable: `$HOME/bin/nginx-glance.sh --json`
-2. **Timer** retriggers every **30 seconds**
-3. Parses stdout as JSON
-4. Updates compact and full representations
+1. On load, runs: `$HOME/bin/nginx-glance.sh --json` (single command string for the DataSource)
+2. **Timer** requests a new run every **30 seconds** — only if the previous run has finished
+3. Parses stdout as JSON; updates compact and full views
+
+### Overlapping refreshes
+
+`refreshRunning` prevents starting a new backend process while the previous executable job is still active. The timer fires every 30s, but `refreshStatus()` returns early until `onNewData` calls `finishRefresh()`.
 
 ### Compact view
 
-- Title + status dot (nginx ok / error / script missing)
-- Summary line: domains healthy/total, ports listening, backends ok
-- Timestamp
+- Status dot (nginx / error / missing script)
+- Short summary: domains healthy/total, ports listening, backends ok
+- “Updating…” during backend run
+- Timestamp (muted)
 
 ### Full view
 
+- Summary inline message
 - `nginx.service` status
-- Per-domain HTTP and HTTPS lines (color by `level`)
-- Listen ports
-- proxy_pass backends
-- System line (CPU, memory, disk)
-- Host + timestamp footer
+- Per-domain HTTP/HTTPS (OK label or status line)
+- Listen ports and backends
+- System line + host/timestamp footer
 
 ### Colors
 
@@ -45,17 +56,36 @@ plasmoid/
 | Warn | `Theme.neutralTextColor` |
 | Error / missing script | `Theme.negativeTextColor` |
 
+## Refresh latency
+
+| Layer | Interval / duration |
+|-------|---------------------|
+| Widget timer | 30 seconds between *attempted* runs |
+| Backend runtime | ~`domains × 2 × NGINX_GLANCE_CURL_TIMEOUT` for curl (sequential) |
+| Visible freshness | When JSON returns — may be later than the timer tick if the backend is still running |
+
+Example: 7 domains, 2s timeout → up to ~28s curl time; the widget will not stack parallel runs.
+
+Tune backend speed with `NGINX_GLANCE_CURL_TIMEOUT` (see [backend.md](backend.md)).
+
 ## Data source
 
 Uses `org.kde.plasma.plasma5support` **executable** engine:
 
 ```qml
-execSource.connectSource(scriptPath, ["--json"])
+readonly property string commandSource: HOME + "/bin/nginx-glance.sh --json"
+
+P5S.DataSource {
+    engine: "executable"
+    connectedSources: []
+    // connectSource(commandSource) — one string for connect and disconnect
+    // sourceName in onNewData === commandSource
+}
 ```
 
-`scriptPath` = `Qt.environment.HOME + "/bin/nginx-glance.sh"`
+`disconnectSource()` and `onNewData` `sourceName` comparisons use the **same** `commandSource` string.
 
-If exit code `127` or failure with empty stdout → show install hint (`./install.sh`).
+If exit code `127` or failure with empty stdout → install hint (`./install.sh`).
 
 ## Installation
 
@@ -71,7 +101,6 @@ Uses `kpackagetool6` or `kpackagetool-6` if available; otherwise prints manual c
 
 ```bash
 kpackagetool6 --type Plasma/Applet --install plasmoid
-# upgrade after changes:
 kpackagetool6 --type Plasma/Applet --upgrade plasmoid
 ```
 
@@ -79,11 +108,27 @@ kpackagetool6 --type Plasma/Applet --upgrade plasmoid
 
 Right-click desktop → **Add Widgets** → search **Nginx Glance**
 
+## Fast local testing
+
+Backend only (widget uses the same JSON):
+
+```bash
+NGINX_GLANCE_CURL_TIMEOUT=1 \
+NGINX_SITES_ENABLED=./testdata/nginx-sites-enabled \
+~/bin/nginx-glance.sh --json | python3 -m json.tool
+```
+
+After QML changes:
+
+```bash
+kpackagetool6 --type Plasma/Applet --upgrade plasmoid
+```
+
 ## Development notes
 
 - UI must stay thin: **no health logic in QML**
-- JSON schema changes require updating `main.qml` bindings and [backend.md](backend.md)
-- Custom `INSTALL_DIR` installs need a symlink or QML path edit (see [ADR-0007](adr/0007-portable-install-to-home-bin.md))
+- JSON schema changes require updating `main.qml` and [backend.md](backend.md)
+- Custom `INSTALL_DIR` → symlink to `$HOME/bin/nginx-glance.sh` or edit `commandSource` in QML
 
 ## Troubleshooting
 
@@ -91,8 +136,9 @@ Right-click desktop → **Add Widgets** → search **Nginx Glance**
 |---------|-----|
 | “Install ./install.sh” | Run installer from project clone |
 | Invalid JSON | Run `~/bin/nginx-glance.sh --json` in terminal |
+| Widget feels slow | Lower `NGINX_GLANCE_CURL_TIMEOUT`; fewer domains |
+| Stale data | Normal if backend run exceeds 30s; wait for “Updating…” to clear |
 | Widget empty | Check Plasma logs; verify script executable |
-| Stale data | Default 30s refresh; replug widget |
 
 ## Related ADR
 
