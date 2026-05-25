@@ -1,0 +1,19 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Id": "org.nginxglance.nginxglance",
+        "Name": "Nginx Glance",
+        "Description": "Read-only local status for nginx-backed sites",
+        "Icon": "network-server",
+        "Category": "System Information",
+        "Version": "1.0.0",
+        "License": "GPL-3.0+",
+        "Authors": [
+            {
+                "Name": "Nginx Glance Contributors"
+            }
+        ]
+    },
+    "X-Plasma-API-Minimum-Version": "6.0",
+    "X-Plasma-MainScript": "ui/main.qml"
+}

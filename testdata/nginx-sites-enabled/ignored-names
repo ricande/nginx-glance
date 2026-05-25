@@ -1,0 +1,24 @@
+# Names that must be ignored by discovery
+server {
+    listen 80;
+    server_name _;
+    return 444;
+}
+
+server {
+    listen 80;
+    server_name *.wildcard.example.com;
+    return 444;
+}
+
+server {
+    listen 80;
+    server_name ~^regex\.example\.com$;
+    return 444;
+}
+
+server {
+    listen 80;
+    server_name $hostname;
+    return 444;
+}

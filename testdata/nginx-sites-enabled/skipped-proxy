@@ -1,0 +1,11 @@
+# proxy_pass forms that should be skipped
+server {
+    listen 80;
+    server_name skip.example.com;
+
+    location / {
+        proxy_pass http://my_upstream;
+        proxy_pass http://$backend;
+        proxy_pass unix:/run/app.sock;
+    }
+}

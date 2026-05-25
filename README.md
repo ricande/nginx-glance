@@ -1,6 +1,6 @@
 # Nginx Glance
 
-Local status report for all sites handled by nginx. The script is meant for the terminal, KDE/Plasma widgets (e.g. Command Output), and quick troubleshooting — without changing nginx, systemd, certbot, `.env`, or application code.
+Local, read-only status for sites handled by nginx. Use it in a **terminal**, a **Command Output** widget, or the included **KDE Plasma 6 plasmoid** — without changing nginx, systemd, certbot, `.env`, or application code.
 
 **Repository:** GitHub — project name `nginx-glance` (use **Code → Clone** on the repo page for the URL).
 
@@ -8,266 +8,253 @@ Local status report for all sites handled by nginx. The script is meant for the 
 
 ## What this project is
 
-**Nginx Glance** is a read-only Bash script that answers: *“Are my local domains and nginx up right now?”*
+**Nginx Glance** answers: *“Are my local domains and nginx up right now?”*
 
 It:
 
-- Reads nginx configuration from `/etc/nginx/sites-enabled/` (read-only)
+- Reads nginx configuration from `sites-enabled` (read-only)
 - Checks `nginx.service`
-- Tests HTTP and HTTPS for every discovered `server_name`
-- Verifies nginx `listen` ports and any `proxy_pass` backends
-- Shows simple system info (CPU load, memory, disk)
-- Shows **no secrets** (no certificates, `.env`, passwords, or keys)
+- Tests HTTP and HTTPS per discovered `server_name`
+- Verifies `listen` ports and `proxy_pass` backends
+- Shows light system metrics (CPU load, memory, disk root)
+- Exposes **no secrets** (no certs, `.env`, passwords, or keys)
 
-It is **not** a monitoring platform, not an infrastructure change, and not tied to a single application. All nginx sites are treated equally; backends are shown only when they exist as `proxy_pass` in the configuration.
-
-### Example deployment
-
-| Property | Typical value |
-|----------|----------------|
-| OS | Linux with systemd (e.g. Kubuntu, Debian, Ubuntu) |
-| Reverse proxy | `nginx.service` (ports 80/443) |
-
-Any site file under `/etc/nginx/sites-enabled/` with a `server_name` is checked automatically. Static sites need no `proxy_pass`; app backends appear when nginx proxies to `http://127.0.0.1:<port>`. App systemd units are **not** started or stopped by Nginx Glance — only `nginx.service` and backend ports are checked.
+This is **local visibility**, not a monitoring platform. It does not mutate infrastructure.
 
 ---
 
-## Files and layout
+## Two ways to use it
 
-| File | Role |
-|------|------|
-| `nginx-glance.sh` (in this folder) | **Working copy / source** — edit here |
-| `install.sh` | Copies the script to `$HOME/bin` (or `INSTALL_DIR`) |
-| `$HOME/bin/nginx-glance.sh` | **Live copy** — run in widget/terminal |
+### A. Terminal / Command Output widget
 
-### Installation (fresh clone)
-
-```bash
-git clone <repository-clone-url>   # GitHub: Code → Clone
-cd nginx-glance
-./install.sh
-# optional: INSTALL_DIR=~/.local/bin ./install.sh
-```
-
-### Update the live script (after source changes)
-
-```bash
-cd nginx-glance   # or your local clone
-./install.sh
-```
-
----
-
-## Script output
-
-```
-Nginx Glance
-============
-<timestamp>
-host: <hostname>
-
-Nginx
------
-✅ nginx.service: active
-
-Domains (HTTP)
---------------
-✅ <domain>/: HTTP/1.1 ...
-
-Domains (HTTPS)
----------------
-✅ <domain>/: HTTP/1.1 ...
-
-Ports (nginx listen)
---------------------
-✅ port 80: listening
-✅ port 443: listening
-
-Backends (proxy_pass)        ← only if proxy exists in config
----------------------
-✅ port 3000: listening
-   → my-app: 127.0.0.1:3000
-...
-
-System
-------
-CPU load: ...
-Memory: ...
-Disk /: ...
-```
-
-### Status icons
-
-| Icon | Meaning |
-|------|---------|
-| ✅ | OK — service active, port listening, or HTTP 2xx/3xx |
-| ⚠️ | Response received but unexpected HTTP status (e.g. 4xx/5xx) |
-| ❌ | No response, service inactive, or port not listening |
-
-HTTP **301/302** count as OK (redirect = server is responding).
-
-### Automatic discovery
-
-| nginx source | Used for |
-|--------------|----------|
-| `server_name` | Domain list (HTTP/HTTPS check on `/`) |
-| `listen` | Ports under “Ports (nginx listen)” |
-| `proxy_pass` | App backends + port check |
-
-New sites in `sites-enabled` are picked up on the next run. Catch-all `_` is filtered out.
-
----
-
-## Usage
-
-### Terminal
+Install the script and run text output:
 
 ```bash
 ~/bin/nginx-glance.sh
-# or: $HOME/bin/nginx-glance.sh
+~/bin/nginx-glance.sh --text
 ```
 
-### KDE / Plasma (Command Output widget)
+In KDE, add a **Command Output** widget with:
 
-1. Right-click the desktop → **Add Widgets**
-2. Search for **Command Output** or similar
-3. Command:
+```bash
+$HOME/bin/nginx-glance.sh --text
+```
 
-   ```bash
-   $HOME/bin/nginx-glance.sh
-   ```
+Refresh every 30–60 seconds.
 
-4. Refresh interval: **30–60 seconds**
+### B. Native KDE Plasma 6 widget
 
-### Requirements (tools on PATH)
+Install the plasmoid package (thin UI over the same script):
 
-`bash`, `curl`, `systemctl`, `ss`, `awk`, `free`, `df` — plus read access to `/etc/nginx/sites-enabled/` for the user running the script.
+```bash
+./install.sh --plasmoid
+```
 
-**Sudo is not required** for normal operation.
+Then: right-click desktop → **Add Widgets** → **Nginx Glance**.
+
+The widget runs `$HOME/bin/nginx-glance.sh --json` every 30 seconds and shows compact green/yellow/red status plus an expanded domain list.
 
 ---
 
-## Design principles and limits
+## Project layout
 
-Rules set at project start:
+| Path | Role |
+|------|------|
+| `nginx-glance.sh` | Backend collector (`--text` / `--json`) |
+| `install.sh` | Installs script; `--plasmoid` installs widget |
+| `plasmoid/` | KDE Plasma 6 applet package |
+| `testdata/nginx-sites-enabled/` | Sample configs for offline parsing tests |
+| `README.md` | This file |
+
+After install, the live script is `$HOME/bin/nginx-glance.sh`.
+
+---
+
+## Installation
+
+```bash
+git clone <repository-clone-url>
+cd nginx-glance
+./install.sh
+```
+
+Optional Plasma widget:
+
+```bash
+./install.sh --plasmoid
+```
+
+Custom install directory:
+
+```bash
+INSTALL_DIR=~/.local/bin ./install.sh
+```
+
+---
+
+## Script usage
+
+```bash
+nginx-glance.sh [--text|--json|--help]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--text` | Human-readable report (default) |
+| `--json` | JSON for the Plasma widget or automation |
+| `--help` | Usage and environment variables |
+
+### Environment
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `NGINX_SITES_ENABLED` | `/etc/nginx/sites-enabled` | nginx site config directory |
+
+### Examples
+
+```bash
+# Default (system nginx)
+~/bin/nginx-glance.sh
+
+# JSON for widgets / scripts
+~/bin/nginx-glance.sh --json
+
+# Parse test fixtures only (no real /etc/nginx required for discovery)
+NGINX_SITES_ENABLED=./testdata/nginx-sites-enabled ./nginx-glance.sh --json
+```
+
+### Parsing rules (read-only)
+
+**`server_name`** — collected when valid; ignored when:
+
+- `_` (catch-all placeholder)
+- Wildcards (`*.example.com`)
+- Regex names (`~...`)
+- Variables (`$hostname`)
+- Empty tokens
+
+Comments (`# ...`) are stripped before parsing.
+
+**`listen`** — port extracted from forms such as:
+
+- `listen 80;`
+- `listen 443 ssl;`
+- `listen [::]:443 ssl;`
+- `listen 127.0.0.1:8080;`
+- `listen *:80;`
+
+**`proxy_pass`** — backends when URL is `http(s)://host:port`; skipped for:
+
+- `unix:` sockets
+- upstream names without host:port
+- variables (`$...`)
+- default port: 80 (http) or 443 (https) if omitted
+
+---
+
+## JSON shape (widget)
+
+```json
+{
+  "timestamp": "2026-05-25 12:00:00",
+  "host": "my-server",
+  "config_path": "/etc/nginx/sites-enabled",
+  "nginx": { "service": "nginx.service", "status": "active", "ok": true },
+  "summary": {
+    "domains_total": 3,
+    "domains_healthy": 2,
+    "domains_unhealthy": 1,
+    "ports_listening": 2,
+    "ports_missing": 0,
+    "backends_ok": 1,
+    "backends_missing": 0
+  },
+  "domains": [ { "name": "example.com", "http": { ... }, "https": { ... } } ],
+  "ports": [ { "port": 443, "listening": true } ],
+  "backends": [ { "target": "127.0.0.1:3000", "port": 3000, "listening": true } ],
+  "system": { "cpu_load": "...", "memory": "...", "disk_root": "..." }
+}
+```
+
+Domain **healthy** = both HTTP and HTTPS checks OK (2xx/3xx, including redirects).
+
+---
+
+## Development and testing
+
+```bash
+# Syntax
+bash -n nginx-glance.sh
+
+# Text output
+./nginx-glance.sh --text
+
+# JSON + fixtures (parsing without touching /etc/nginx)
+NGINX_SITES_ENABLED=./testdata/nginx-sites-enabled ./nginx-glance.sh --json
+
+# Install locally
+./install.sh
+
+# Plasmoid (manual, if install.sh printed instructions)
+kpackagetool6 --type Plasma/Applet --install plasmoid
+kpackagetool6 --type Plasma/Applet --upgrade plasmoid
+```
+
+Requires **KDE Plasma 6** for the native widget (`X-Plasma-API-Minimum-Version: 6.0`).
+
+### Dependencies
+
+`bash`, `curl`, `systemctl`, `ss`, `awk`, `sed`, `grep`, `free`, `df` — read access to `NGINX_SITES_ENABLED`. **No sudo** for normal use.
+
+---
+
+## Design principles
 
 | Does | Does not |
 |------|----------|
 | Read nginx config | Change nginx |
-| `systemctl is-active` (read-only) | Start/stop services |
-| `curl -sI` to public URLs | Run certbot |
+| `systemctl is-active` | Start/stop services |
+| `curl -sI` to local URLs | Run certbot |
 | `ss -ltn` for ports | Change `.env` or app code |
-| Show system metrics | Show secrets or certificate contents |
+| Show system metrics | Expose secrets |
+| | Use `sudo` |
 | | Run `npm` |
-| | Use `sudo` (unless absolutely necessary) |
 
-Health checks use **`/`** for all domains. Redirects (301/302) still count as “responding”.
+Health checks use **`/`** per domain. Redirects (301/302) count as OK.
 
-The script does **not** check separate systemd units per app (e.g. `my-app.service`) — only `nginx.service` plus any `proxy_pass` ports.
-
----
-
-## Project history
-
-### Step 1 — Inventory (read-only)
-
-- Mapped host, tools, and active services
-- Verified nginx and backend ports
-- Listed all `server_name` values in nginx
-- Tested HTTP/HTTPS with `curl` — no configuration changes
-
-### Steps 2–4 — First script (`~/bin`)
-
-- Created `~/bin/` and install script
-- Built status script with service, URL, port, and system sections
-- `chmod +x` and test runs
-
-### Iterations after feedback
-
-1. **Broader scope** — from a single-app focus to all nginx domains
-2. **Dynamic ports** — removed hardcoded 3000/3001; ports from `listen` and `proxy_pass`
-3. **Service section** — only `nginx.service` (no app-specific unit names in main logic)
-4. **Domain discovery** — fixed reading `sites-enabled` (per file, not `grep -rh` on symlinks)
-5. **Naming** — main script: `nginx-glance.sh` (single script file)
-6. **Layout** — source in project folder, portable `install.sh` (`$HOME/bin`)
-7. **GitHub** — published as `nginx-glance`
-
-### Delivered
-
-- Working local status script with no infrastructure changes
-- KDE command-output widget compatibility
-- Documentation (this README)
-- Git repo with `nginx-glance.sh`, `install.sh`, `README.md`
+Per-app systemd units are **not** checked — only `nginx.service` and `proxy_pass` ports.
 
 ---
 
-## Remaining work
+## Plasmoid troubleshooting
 
-### Manual (user)
-
-- [ ] **KDE widget** — add Command Output with `nginx-glance.sh` and chosen refresh interval
-- [ ] **PATH (optional)** — add `~/bin` to PATH to run without a full path:
-  ```bash
-  # in ~/.bashrc or ~/.profile
-  export PATH="$HOME/bin:$PATH"
-  ```
-
-### Optional improvements (not implemented)
-
-- [x] **Git** — repository on GitHub
-- [ ] **Custom health paths** — e.g. `/se` for some domains (config file, no nginx change)
-- [ ] **App systemd checks** — optional section mapping `proxy_pass` port → known `.service` names (maintenance list)
-- [ ] **Notifications** — on ❌: desktop notice, email, or webhook (extra script/cron)
-- [ ] **Log history** — systemd timer or cron writing output to `~/logs/nginx-glance.log`
-- [ ] **Desktop/panel integration** — `.desktop` file or Plasma data engine
-- [ ] **Compact layout** — single-line mode for small panels
-- [ ] **TLS/cert expiry** — read-only certificate date check (no certbot)
-
-### Known limitations
-
-- Domains must be active `server_name` entries in `sites-enabled` (commented lines ignored)
-- `default` / `_` is not tested as a domain
-- External DNS/CDN is not tested — `curl` uses names resolved on the server
-- Short timeouts (5 s) may cause false ❌ under brief load
+| Issue | Action |
+|-------|--------|
+| Widget says install script missing | Run `./install.sh` from the project clone |
+| Empty or invalid JSON | Run `~/bin/nginx-glance.sh --json` in a terminal |
+| `kpackagetool6` not found | Install KDE dev tools; use manual `kpackagetool6 --install plasmoid` |
+| No domains | Check read access to `sites-enabled` |
 
 ---
 
-## Troubleshooting
+## Remaining ideas (optional)
 
-| Problem | Possible cause | Action |
-|---------|----------------|--------|
-| No domains listed | Cannot read `/etc/nginx/sites-enabled/` | `ls -la /etc/nginx/sites-enabled/` as your user |
-| ❌ on HTTPS but site works in browser | Local vs external DNS differs | Test `curl -sI https://domain/` on the server |
-| ❌ proxy port | App service down | `systemctl status <app>.service` (manual, outside script) |
-| ⚠️ HTTP 4xx/5xx | App or nginx rule | Check nginx error log and app logs |
-| Widget shows nothing | Wrong command or not executable | `chmod +x ~/bin/nginx-glance.sh` |
+- [ ] Custom health paths per domain (config file)
+- [ ] Notifications on failure
+- [ ] Log history via cron/systemd timer
+- [ ] TLS certificate expiry (read-only)
 
 ---
 
 ## Quick reference
 
 ```bash
-# Run status
-~/bin/nginx-glance.sh
-
-# Domains nginx knows about (manual)
-grep -h server_name /etc/nginx/sites-enabled/* | grep -v '_'
-
-# Is nginx active?
-systemctl is-active nginx.service
+~/bin/nginx-glance.sh --text
+~/bin/nginx-glance.sh --json
+./install.sh
+./install.sh --plasmoid
 ```
 
 ---
 
-## Related paths (server)
-
-| Path | Contents |
-|------|----------|
-| `/etc/nginx/sites-enabled/` | Active nginx sites (symlinks) |
-| `/etc/nginx/sites-available/` | Site config sources |
-| `$HOME/bin/nginx-glance.sh` | Live script (installed via `install.sh`) |
-| Clone of `nginx-glance` | Source, `install.sh`, this README |
-
----
-
-*Last updated: 2026-05-25 — GitHub repo, portable install, `nginx-glance.sh` only as live script.*
+*Targets KDE Plasma 6 for the plasmoid; terminal mode works on any Linux host with the listed tools.*

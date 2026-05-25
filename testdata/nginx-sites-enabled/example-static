@@ -1,0 +1,17 @@
+# Sample static site
+server {
+    listen 80;
+    listen [::]:443 ssl;
+    server_name example.com www.example.com;
+
+    root /var/www/example;
+    location / {
+        try_files $uri $uri/ =404;
+    }
+}
+
+server {
+    listen 127.0.0.1:8080;
+    server_name local.example.com;
+    return 200;
+}
