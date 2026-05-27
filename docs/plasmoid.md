@@ -1,5 +1,9 @@
 # Plasma 6 plasmoid
 
+![Expanded Nginx Glance widget](../images/plasmoid-overview.png)
+
+*Example: domain HTTP/HTTPS checks, port listen state, proxy backends, and system footer (local host).*
+
 ## Package layout
 
 ```

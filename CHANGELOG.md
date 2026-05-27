@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- `docs/images/plasmoid-overview.png` — screenshot of expanded plasmoid in README and [docs/plasmoid.md](docs/plasmoid.md)
+
 ## 1.5.0 — 2026-05-26
 
 ### Added

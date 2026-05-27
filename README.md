@@ -60,6 +60,8 @@ Then: right-click desktop → **Add Widgets** → **Nginx Glance**.
 
 Runs `$HOME/bin/nginx-glance.sh --json` about every 20 seconds and `--sample-json` every 500 ms — compact health sparkline plus per-domain activity bars in the expanded view (see [plasmoid.md](docs/plasmoid.md)).
 
+![Nginx Glance plasmoid — domains, ports, backends](docs/images/plasmoid-overview.png)
+
 After upgrading the widget: `./install.sh --plasmoid`, then restart `plasma-plasmashell` or re-add the widget (`git pull` alone is not enough).
 
 ---
@@ -74,6 +76,7 @@ After upgrading the widget: `./install.sh --plasmoid`, then restart `plasma-plas
 | `plasmoid/contents/ui/main.qml` | Widget UI |
 | `testdata/nginx-sites-enabled/` | Sample nginx configs for offline tests |
 | `docs/` | Architecture, guides, [ADRs](docs/adr/) |
+| `docs/images/` | Screenshots for README and docs |
 | `README.md` | Quick start (this file) |
 | `CHANGELOG.md` | Version history |
 | `.gitignore` | Ignores local `nginx-glance.zip` |
